@@ -11,7 +11,7 @@ from config import SECRET_KEY
 from models import Usuario
 from connection import get_db_connection
 
-def create_app():
+def create_app(environ=None, start_response=None):
     app = Flask(__name__, static_folder='frontend')
     app.config['SECRET_KEY'] = SECRET_KEY
 

@@ -1,4 +1,5 @@
 import os
+from flask_cors import CORS
 from flask import Flask, request, jsonify, redirect, url_for
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
@@ -12,8 +13,10 @@ from models import Usuario
 from connection import get_db_connection
 
 def create_app():
-    app = Flask(__name__, static_folder='frontend')
+    app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
+    CORS(app, origins=['https://controle-familiar-frontend.vercel.app', 'http://localhost:3000'], supports_credentials=True)  # Permite Vercel e localhost
+
 
     # Configuração do Flask-Login
     login_manager = LoginManager()
@@ -43,27 +46,21 @@ def create_app():
     # Rota para a página inicial
     @app.route('/')
     def index():
-        if current_user.is_authenticated:
-            return app.send_static_file('index.html')
-        else:
-            return redirect(url_for('login'))
+        return redirect('https://controle-familiar-frontend.vercel.app')  # Redireciona para Vercel
 
     # Rota para a página de login
-    @app.route('/login', methods=['GET', 'POST'])
+    @app.route('/api/login', methods=['POST'])  # Mude para /api/login e POST apenas
     def login():
-        if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
+        data = request.get_json()  # Aceita JSON em vez de form
+        username = data.get('username')
+        password = data.get('password')
+        user = Usuario.get_by_username(username)
+        if user and user.check_password(password):
+            login_user(user)
+            return jsonify({'message': 'Login bem-sucedido', 'username': user.username}), 200
+        else:
+            return jsonify({'error': 'Credenciais inválidas'}), 401
 
-            user = Usuario.get_by_username(username)
-            if user and user.check_password(password):
-                login_user(user)
-                next_page = request.args.get('next')
-                return redirect(next_page) if next_page else redirect(url_for('index'))
-            else:
-                return jsonify({'error': 'Credenciais inválidas'}), 401
-
-        return app.send_static_file('index.html')
 
     # Rota para logout
     @app.route('/logout')

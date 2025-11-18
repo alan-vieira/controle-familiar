@@ -11,22 +11,22 @@ from config import SECRET_KEY
 from models import Usuario
 from connection import get_db_connection
 
-def create_app(environ=None, start_response=None):
+def create_app():
     app = Flask(__name__, static_folder='frontend')
     app.config['SECRET_KEY'] = SECRET_KEY
 
     # Configuração do Flask-Login
     login_manager = LoginManager()
     login_manager.init_app(app)
-    login_manager.login_view = 'login' # Redireciona para a rota 'login' se não estiver autenticado
-    login_manager.login_message = 'Por favor, faça login para acessar esta página.' # Mensagem opcional
-    login_manager.login_message_category = 'info' # Categoria de mensagem do Bootstrap/Flash
+    login_manager.login_view = 'login'
+    login_manager.login_message = 'Por favor, faça login para acessar esta página.'
+    login_manager.login_message_category = 'info'
 
     @login_manager.user_loader
     def load_user(user_id):
         return Usuario.get(int(user_id))
 
-    # Registrar blueprints (Antes de adicionar a proteção global)
+    # Registrar blueprints
     app.register_blueprint(colaboradores_bp, url_prefix='/api')
     app.register_blueprint(despesas_bp, url_prefix='/api')
     app.register_blueprint(rendas_bp, url_prefix='/api')
@@ -34,18 +34,11 @@ def create_app(environ=None, start_response=None):
     app.register_blueprint(divisao_bp, url_prefix='/api')
 
     # --- PROTEGER TODAS AS ROTAS DA API ---
-    # Aplica @login_required a todas as rotas que começam com /api/
-    # Isso garante que apenas usuários logados possam acessar os dados.
-    # As rotas de login/logout e a rota de status de autenticação são exceções.
     @app.before_request
     def proteger_rotas_api():
         if request.endpoint and request.blueprint in ['colaboradores', 'despesas', 'rendas', 'resumo', 'divisao']:
             if not current_user.is_authenticated:
-                # Se a rota for da API e o usuário não estiver logado,
-                # retorna um erro 401 para chamadas AJAX ou redireciona para login para requisições normais.
-                # Para o frontend JS fazer a chamada AJAX, é melhor retornar 401.
                 return jsonify({'error': 'Não autorizado. Faça login.'}), 401
-
 
     # Rota para a página inicial
     @app.route('/')
@@ -68,16 +61,13 @@ def create_app(environ=None, start_response=None):
                 next_page = request.args.get('next')
                 return redirect(next_page) if next_page else redirect(url_for('index'))
             else:
-                # Retornar erro para o frontend
-                # Para um formulário HTML tradicional, você usaria flash e render_template
-                # Mas para o JS fazer POST, é melhor retornar JSON
                 return jsonify({'error': 'Credenciais inválidas'}), 401
 
-        return app.send_static_file('index.html') # Serve o index.html que contém o modal de login
+        return app.send_static_file('index.html')
 
     # Rota para logout
     @app.route('/logout')
-    @login_required # Opcional: se for uma rota protegida, mas o logout pode ser feito estando logado
+    @login_required
     def logout():
         logout_user()
         return redirect(url_for('login'))
@@ -96,6 +86,11 @@ def create_app(environ=None, start_response=None):
         return {'status': 'OK'}, 200
 
     return app
+
+# Função WSGI que o Gunicorn chama
+def application(environ, start_response):
+    app = create_app()
+    return app(environ, start_response)
 
 if __name__ == '__main__':
     app = create_app()

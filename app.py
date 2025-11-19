@@ -15,7 +15,21 @@ from connection import get_db_connection
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
-    CORS(app, origins=['https://controle-familiar-frontend.vercel.app'], supports_credentials=True)
+
+    # CONFIGURAÇÃO CRUCIAL PARA SESSÕES ENTRE DOMÍNIOS
+    app.config.update(
+        SESSION_COOKIE_SAMESITE="None",
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_NAME="session"
+    )
+
+    # CORS com credenciais
+    CORS(
+        app,
+        origins=["https://controle-familiar-frontend.vercel.app"],
+        supports_credentials=True
+    )
 
 
     # Configuração do Flask-Login
@@ -63,11 +77,10 @@ def create_app():
 
 
     # Rota para logout
-    @app.route('/logout')
-    @login_required
+    @app.route('/api/logout', methods=['POST'])
     def logout():
         logout_user()
-        return redirect(url_for('login'))
+        return jsonify({'message': 'Logout bem-sucedido'})
 
     # Rota para verificar o status de login (não deve ser protegida!)
     @app.route('/api/auth/status')

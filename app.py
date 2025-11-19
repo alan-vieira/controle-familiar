@@ -15,7 +15,7 @@ from connection import get_db_connection
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
-    CORS(app, origins=['https://controle-familiar-frontend.vercel.app', 'http://localhost:3000'], supports_credentials=True)  # Permite Vercel e localhost
+    CORS(app, origins=['https://controle-familiar-frontend.vercel.app'], supports_credentials=True)
 
 
     # Configuração do Flask-Login

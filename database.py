@@ -34,9 +34,9 @@ def init_db():
     cursor = conn.cursor()
     
     try:
-        # Tabela de usuários
+        # Tabela de usuários (AGORA COM NOME CORRETO: usuario)
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS usuario (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(80) UNIQUE NOT NULL,
                 email VARCHAR(120) UNIQUE NOT NULL,
@@ -44,19 +44,7 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
-        # Tabela de colaboradores (se necessário)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS colaboradores (
-                id SERIAL PRIMARY KEY,
-                nome VARCHAR(100) NOT NULL,
-                email VARCHAR(100),
-                telefone VARCHAR(20),
-                user_id INTEGER REFERENCES users(id),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
+
         conn.commit()
         print("✅ Tabelas criadas/verificadas com sucesso")
         

@@ -56,8 +56,9 @@ def create_app():
         # Lista de rotas públicas (por path, mais confiável que endpoint)
         public_paths = [
             '/api/login',
-            '/api/auth/status', 
+            '/api/auth/status',
             '/api/logout',
+            '/api/create-admin',
             '/health',
             '/'
         ]

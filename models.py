@@ -1,5 +1,6 @@
 import bcrypt
 from flask_login import UserMixin
+from database import get_db_connection
 
 class Usuario(UserMixin):
     def __init__(self, id, username, email, password):

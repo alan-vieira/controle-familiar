@@ -18,22 +18,15 @@ class Usuario(UserMixin):
             cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             if user:
-                # DEBUG: Ver o que está retornando
-                print(f"🔍 DEBUG GET_BY_ID - User raw: {user}")
-                print(f"🔍 DEBUG GET_BY_ID - User type: {type(user)}")
-                
-                # Converter tupla para dicionário
-                columns = [desc[0] for desc in cursor.description]
-                user_dict = dict(zip(columns, user))
-                
-                print(f"🔍 DEBUG GET_BY_ID - User dict: {user_dict}")
-                print(f"🔍 DEBUG GET_BY_ID - Password hash value: {user_dict.get('password_hash')}")
+                # Já é um RealDictRow (já é dicionário), não precisa converter!
+                print(f"🔍 DEBUG GET_BY_ID - User dict: {dict(user)}")
+                print(f"🔍 DEBUG GET_BY_ID - Password hash value: {user['password_hash']}")
                 
                 return Usuario(
-                    id=user_dict['id'],
-                    username=user_dict['username'],
-                    email=user_dict['email'],
-                    password_hash=user_dict['password_hash']
+                    id=user['id'],
+                    username=user['username'],
+                    email=user['email'],
+                    password_hash=user['password_hash']  # ACESSA DIRETAMENTE
                 )
             return None
         except Exception as e:
@@ -51,22 +44,15 @@ class Usuario(UserMixin):
             cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE username = %s", (username,))
             user = cursor.fetchone()
             if user:
-                # DEBUG: Ver o que está retornando
-                print(f"🔍 DEBUG GET_BY_USERNAME - User raw: {user}")
-                print(f"🔍 DEBUG GET_BY_USERNAME - User type: {type(user)}")
-                
-                # Converter tupla para dicionário
-                columns = [desc[0] for desc in cursor.description]
-                user_dict = dict(zip(columns, user))
-                
-                print(f"🔍 DEBUG GET_BY_USERNAME - User dict: {user_dict}")
-                print(f"🔍 DEBUG GET_BY_USERNAME - Password hash value: {user_dict.get('password_hash')}")
+                # Já é um RealDictRow (já é dicionário), não precisa converter!
+                print(f"🔍 DEBUG GET_BY_USERNAME - User dict: {dict(user)}")
+                print(f"🔍 DEBUG GET_BY_USERNAME - Password hash value: {user['password_hash']}")
                 
                 return Usuario(
-                    id=user_dict['id'],
-                    username=user_dict['username'],
-                    email=user_dict['email'],
-                    password_hash=user_dict['password_hash']
+                    id=user['id'],
+                    username=user['username'],
+                    email=user['email'],
+                    password_hash=user['password_hash']  # ACESSA DIRETAMENTE
                 )
             return None
         except Exception as e:

@@ -59,17 +59,24 @@ def create_app():
             '/api/auth/status',
             '/api/logout',
             '/api/create-admin',
+            '/api/init-db',
             '/health',
             '/'
         ]
         
+        # DEBUG: Mostrar qual path está sendo acessado
+        print(f"🔍 Path acessado: {request.path}")
+        print(f"🔍 Public paths: {public_paths}")
+        
         # Se a rota atual está na lista de públicas, não proteger
         if request.path in public_paths:
+            print(f"✅ Rota pública, permitindo acesso: {request.path}")
             return
         
         # Proteger todas as outras rotas /api/*
         if request.path.startswith('/api/'):
             if not current_user.is_authenticated:
+                print(f"🚫 Rota protegida, usuário não autenticado: {request.path}")
                 return jsonify({'error': 'Não autorizado. Faça login.'}), 401
 
     # Rota para a página inicial

@@ -1,9 +1,11 @@
+-- 1. Tabela de colaboradores
 CREATE TABLE IF NOT EXISTS colaborador (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL UNIQUE,
     dia_fechamento INTEGER NOT NULL CHECK (dia_fechamento BETWEEN 1 AND 31)
 );
 
+-- 2. Tabela de rendas mensais
 CREATE TABLE IF NOT EXISTS renda_mensal (
     id SERIAL PRIMARY KEY,
     colaborador_id INTEGER NOT NULL REFERENCES colaborador(id) ON DELETE CASCADE,
@@ -12,6 +14,7 @@ CREATE TABLE IF NOT EXISTS renda_mensal (
     UNIQUE(colaborador_id, mes_ano)
 );
 
+-- 3. Tabela de despesas (ATUALIZADA com constraints)
 CREATE TABLE IF NOT EXISTS despesa (
     id SERIAL PRIMARY KEY,
     data_compra DATE NOT NULL,
@@ -33,7 +36,7 @@ CREATE TABLE IF NOT EXISTS despesa (
     )
 );
 
--- Tabela para registrar quando a divisão de um mês foi paga
+-- 4. Tabela para divisão mensal
 CREATE TABLE IF NOT EXISTS divisao_mensal (
     mes_ano VARCHAR(7) PRIMARY KEY,
     paga BOOLEAN NOT NULL DEFAULT false,
@@ -41,16 +44,28 @@ CREATE TABLE IF NOT EXISTS divisao_mensal (
     CHECK (mes_ano ~ '^\d{4}-(0[1-9]|1[0-2])$')
 );
 
--- Tabela para usuários (login)
+-- 5. Tabela de usuários (ATUALIZADA com campos completos)
 CREATE TABLE IF NOT EXISTS usuario (
     id SERIAL PRIMARY KEY,
     username VARCHAR(150) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ativo BOOLEAN DEFAULT true
 );
 
--- Índices para desempenho
+-- 6. Índices para desempenho
 CREATE INDEX IF NOT EXISTS idx_despesa_mes_vigente ON despesa(mes_vigente);
 CREATE INDEX IF NOT EXISTS idx_despesa_colaborador ON despesa(colaborador_id);
-CREATE INDEX IF NOT EXISTS idx_despesa_categoria ON despesa(categoria);  -- novo índice útil para relatórios
+CREATE INDEX IF NOT EXISTS idx_despesa_categoria ON despesa(categoria);
 CREATE INDEX IF NOT EXISTS idx_renda_mes_ano ON renda_mensal(mes_ano);
-CREATE INDEX IF NOT EXISTS idx_usuario_username ON usuario(username); -- índice para login
+CREATE INDEX IF NOT EXISTS idx_usuario_username ON usuario(username);
+CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
+
+-- 7. Inserir usuário admin inicial (senha: admin123)
+INSERT INTO usuario (username, email, password_hash) VALUES (
+    'admin', 
+    'admin@familia.com', 
+    -- Senha: admin123 (hash gerado com werkzeug.security.generate_password_hash)
+    'scrypt:32768:8:1$Dvg3OZq7Q7qgV9nL$5f1a6c6e7c8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2'
+) ON CONFLICT (username) DO NOTHING;

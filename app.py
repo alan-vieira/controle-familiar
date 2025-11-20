@@ -53,12 +53,20 @@ def create_app():
     # --- PROTEGER TODAS AS ROTAS DA API ---
     @app.before_request
     def proteger_rotas_api():
-        # Não proteger rotas públicas
-        public_routes = ['login', 'auth_status', 'health', 'static']
-        if request.endpoint in public_routes:
+        # Lista de rotas públicas (por path, mais confiável que endpoint)
+        public_paths = [
+            '/api/login',
+            '/api/auth/status', 
+            '/api/logout',
+            '/health',
+            '/'
+        ]
+        
+        # Se a rota atual está na lista de públicas, não proteger
+        if request.path in public_paths:
             return
         
-        # Proteger todas as rotas /api/* (exceto login e auth_status)
+        # Proteger todas as outras rotas /api/*
         if request.path.startswith('/api/'):
             if not current_user.is_authenticated:
                 return jsonify({'error': 'Não autorizado. Faça login.'}), 401

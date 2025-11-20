@@ -60,6 +60,8 @@ def create_app():
             '/api/logout',
             '/api/create-admin',
             '/api/init-db',
+            '/api/debug-hash',
+            '/api/reset-admin',
             '/health',
             '/'
         ]
@@ -90,28 +92,38 @@ def create_app():
         if request.method == 'OPTIONS':
             return '', 200
             
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'Dados JSON necessários'}), 400
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Dados JSON necessários'}), 400
+                
+            username = data.get('username')
+            password = data.get('password')
             
-        username = data.get('username')
-        password = data.get('password')
-        
-        if not username or not password:
-            return jsonify({'error': 'Username e password são obrigatórios'}), 400
-        
-        from models import Usuario
-        user = Usuario.get_by_username(username)
-        
-        if user and user.check_password(password):
-            login_user(user, remember=True)
-            return jsonify({
-                'message': 'Login bem-sucedido', 
-                'username': user.username,
-                'user_id': user.id
-            }), 200
-        else:
-            return jsonify({'error': 'Credenciais inválidas'}), 401
+            if not username or not password:
+                return jsonify({'error': 'Username e password são obrigatórios'}), 400
+            
+            from models import Usuario
+            user = Usuario.get_by_username(username)
+            
+            print(f"🔍 DEBUG LOGIN - Usuário encontrado: {user is not None}")
+            if user:
+                print(f"🔍 DEBUG LOGIN - Hash no banco: {user.password}")
+                print(f"🔍 DEBUG LOGIN - Check password result: {user.check_password(password)}")
+            
+            if user and user.check_password(password):
+                login_user(user, remember=True)
+                return jsonify({
+                    'message': 'Login bem-sucedido', 
+                    'username': user.username,
+                    'user_id': user.id
+                }), 200
+            else:
+                return jsonify({'error': 'Credenciais inválidas'}), 401
+                
+        except Exception as e:
+            print(f"❌ ERRO NO LOGIN: {str(e)}")
+            return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
     # Rota para logout
     @app.route('/api/logout', methods=['POST', 'OPTIONS'])

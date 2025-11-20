@@ -14,7 +14,7 @@ class Usuario(UserMixin):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, username, email, password FROM users WHERE id = %s", (user_id,))
+            cursor.execute("SELECT id, username, email, password FROM usuario WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             if user:
                 # Converter tupla para dicionário
@@ -39,7 +39,7 @@ class Usuario(UserMixin):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, username, email, password FROM users WHERE username = %s", (username,))
+            cursor.execute("SELECT id, username, email, password FROM usuario WHERE username = %s", (username,))
             user = cursor.fetchone()
             if user:
                 # Converter tupla para dicionário
@@ -73,7 +73,7 @@ class Usuario(UserMixin):
         cursor = conn.cursor()
         try:
             # Verificar se usuário já existe
-            cursor.execute("SELECT id FROM users WHERE username = %s OR email = %s", (username, email))
+            cursor.execute("SELECT id FROM usuario WHERE username = %s OR email = %s", (username, email))
             if cursor.fetchone():
                 raise Exception("Usuário ou email já existe")
             
@@ -82,7 +82,7 @@ class Usuario(UserMixin):
             
             # Inserir novo usuário
             cursor.execute(
-                "INSERT INTO users (username, email, password) VALUES (%s, %s, %s) RETURNING id",
+                "INSERT INTO usuario (username, email, password) VALUES (%s, %s, %s) RETURNING id",
                 (username, email, hashed_password)
             )
             user_id = cursor.fetchone()[0]

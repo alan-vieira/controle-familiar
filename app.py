@@ -162,6 +162,55 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 400
 
+    # Rota para debug do hash (REMOVER EM PRODUÇÃO)
+    @app.route('/api/debug-hash', methods=['GET'])
+    def debug_hash():
+        try:
+            from database import get_db_connection
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT username, password_hash FROM usuario WHERE username = 'admin'")
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                'username': user['username'],
+                'password_hash': user['password_hash']
+            }), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # Rota para resetar senha do admin (REMOVER EM PRODUÇÃO)
+    @app.route('/api/reset-admin', methods=['POST'])
+    def reset_admin():
+        try:
+            from database import get_db_connection
+            from werkzeug.security import generate_password_hash
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Deletar admin existente
+            cursor.execute("DELETE FROM usuario WHERE username = 'admin'")
+            
+            # Recriar admin com senha conhecida
+            hashed_password = generate_password_hash('admin123')
+            
+            cursor.execute(
+                "INSERT INTO usuario (username, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
+                ('admin', 'admin@familia.com', hashed_password)
+            )
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            return jsonify({'message': 'Admin resetado com senha: admin123'}), 200
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     return app
 
 # Função WSGI para Gunicorn

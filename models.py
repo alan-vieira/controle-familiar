@@ -3,18 +3,18 @@ from flask_login import UserMixin
 from database import get_db_connection
 
 class Usuario(UserMixin):
-    def __init__(self, id, username, email, password):
+    def __init__(self, id, username, email, password_hash):
         self.id = id
         self.username = username
         self.email = email
-        self.password = password
+        self.password = password_hash  # Mapeia password_hash para password para o Flask-Login
 
     @staticmethod
     def get_by_id(user_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, username, email, password FROM usuario WHERE id = %s", (user_id,))
+            cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             if user:
                 # Converter tupla para dicionário
@@ -24,7 +24,7 @@ class Usuario(UserMixin):
                     id=user_dict['id'],
                     username=user_dict['username'],
                     email=user_dict['email'],
-                    password=user_dict['password']
+                    password_hash=user_dict['password_hash']
                 )
             return None
         except Exception as e:
@@ -39,7 +39,7 @@ class Usuario(UserMixin):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, username, email, password FROM usuario WHERE username = %s", (username,))
+            cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE username = %s", (username,))
             user = cursor.fetchone()
             if user:
                 # Converter tupla para dicionário
@@ -49,7 +49,7 @@ class Usuario(UserMixin):
                     id=user_dict['id'],
                     username=user_dict['username'],
                     email=user_dict['email'],
-                    password=user_dict['password']
+                    password_hash=user_dict['password_hash']
                 )
             return None
         except Exception as e:
@@ -61,8 +61,9 @@ class Usuario(UserMixin):
 
     def check_password(self, password):
         try:
-            # Verificar se a senha fornecida corresponde ao hash armazenado
-            return bcrypt.checkpw(password.encode('utf-8'), self.password.encode('utf-8'))
+            # O hash no banco foi gerado com werkzeug, não bcrypt!
+            from werkzeug.security import check_password_hash
+            return check_password_hash(self.password, password)
         except Exception as e:
             print(f"Erro ao verificar senha: {e}")
             return False
@@ -77,12 +78,13 @@ class Usuario(UserMixin):
             if cursor.fetchone():
                 raise Exception("Usuário ou email já existe")
             
-            # Fazer hash da senha
-            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            # Fazer hash da senha com werkzeug (compatível com o admin existente)
+            from werkzeug.security import generate_password_hash
+            hashed_password = generate_password_hash(password)
             
             # Inserir novo usuário
             cursor.execute(
-                "INSERT INTO usuario (username, email, password) VALUES (%s, %s, %s) RETURNING id",
+                "INSERT INTO usuario (username, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
                 (username, email, hashed_password)
             )
             user_id = cursor.fetchone()[0]

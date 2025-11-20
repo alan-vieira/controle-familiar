@@ -1,7 +1,7 @@
 import bcrypt
 from flask_login import UserMixin
 from database import get_db_connection
-from werkzeug.security import check_password_hash  # ADICIONE ESTA LINHA
+from werkzeug.security import check_password_hash
 
 class Usuario(UserMixin):
     def __init__(self, id, username, email, password_hash):
@@ -18,9 +18,17 @@ class Usuario(UserMixin):
             cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             if user:
+                # DEBUG: Ver o que está retornando
+                print(f"🔍 DEBUG GET_BY_ID - User raw: {user}")
+                print(f"🔍 DEBUG GET_BY_ID - User type: {type(user)}")
+                
                 # Converter tupla para dicionário
                 columns = [desc[0] for desc in cursor.description]
                 user_dict = dict(zip(columns, user))
+                
+                print(f"🔍 DEBUG GET_BY_ID - User dict: {user_dict}")
+                print(f"🔍 DEBUG GET_BY_ID - Password hash value: {user_dict.get('password_hash')}")
+                
                 return Usuario(
                     id=user_dict['id'],
                     username=user_dict['username'],
@@ -43,9 +51,17 @@ class Usuario(UserMixin):
             cursor.execute("SELECT id, username, email, password_hash FROM usuario WHERE username = %s", (username,))
             user = cursor.fetchone()
             if user:
+                # DEBUG: Ver o que está retornando
+                print(f"🔍 DEBUG GET_BY_USERNAME - User raw: {user}")
+                print(f"🔍 DEBUG GET_BY_USERNAME - User type: {type(user)}")
+                
                 # Converter tupla para dicionário
                 columns = [desc[0] for desc in cursor.description]
                 user_dict = dict(zip(columns, user))
+                
+                print(f"🔍 DEBUG GET_BY_USERNAME - User dict: {user_dict}")
+                print(f"🔍 DEBUG GET_BY_USERNAME - Password hash value: {user_dict.get('password_hash')}")
+                
                 return Usuario(
                     id=user_dict['id'],
                     username=user_dict['username'],
@@ -62,8 +78,13 @@ class Usuario(UserMixin):
 
     def check_password(self, password):
         try:
+            print(f"🔍 DEBUG CHECK_PASSWORD - Self.password: {self.password}")
+            print(f"🔍 DEBUG CHECK_PASSWORD - Password to check: {password}")
+            
             # Usar check_password_hash do Werkzeug que suporta scrypt
-            return check_password_hash(self.password, password)
+            result = check_password_hash(self.password, password)
+            print(f"🔍 DEBUG CHECK_PASSWORD - Result: {result}")
+            return result
         except Exception as e:
             print(f"Erro ao verificar senha: {e}")
             return False

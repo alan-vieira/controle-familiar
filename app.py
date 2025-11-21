@@ -1,12 +1,13 @@
 import os
-from flask import Flask, request, jsonify, redirect, session
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from datetime import datetime
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from datetime import datetime, timedelta
 import logging
 from connection import get_db_connection
 from config import SECRET_KEY
 from psycopg2.extras import RealDictCursor
-import secrets
+from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)
 
@@ -14,67 +15,27 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
     
-    # 🔒 CONFIGURAÇÕES DE SEGURANÇA PARA CROSS-SITE
+    # 🔐 CONFIGURAÇÃO JWT
+    app.config['JWT_SECRET_KEY'] = SECRET_KEY  # Usa a mesma SECRET_KEY
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+    
+    # 🔒 CONFIGURAÇÕES DE SEGURANÇA
     app.config.update(
-        SESSION_COOKIE_HTTPONLY=True,      # Impede acesso JavaScript ao cookie
-        SESSION_COOKIE_SECURE=True,        # Apenas HTTPS (OBRIGATÓRIO para SameSite=None)
-        SESSION_COOKIE_SAMESITE='None',    # Permite cross-site (frontend/backend em domínios diferentes)
-        PERMANENT_SESSION_LIFETIME=3600    # Sessão expira em 1 hora
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SAMESITE='None',
     )
 
-    # CORS com configuração segura para cross-site
+    # CORS com configuração segura
     CORS(app, 
          origins=['https://controle-familiar-frontend.vercel.app'],
-         supports_credentials=True,        # IMPORTANTE: permite cookies cross-site
+         supports_credentials=True,
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-         allow_headers=['Content-Type', 'Authorization', 'X-CSRF-Token']
+         allow_headers=['Content-Type', 'Authorization']
     )
 
-    # 🔥 SISTEMA DE AUTENTICAÇÃO SEGURO (substitui o current_user_id global)
-    users_sessions = {}  # Em produção, use Redis ou database
-
-    def login_required(f):
-        def decorated_function(*args, **kwargs):
-            auth_header = request.headers.get('Authorization')
-            session_token = request.cookies.get('session_token')
-            
-            # Verificar token no header ou cookie
-            token = None
-            if auth_header and auth_header.startswith('Bearer '):
-                token = auth_header[7:]
-            elif session_token:
-                token = session_token
-            
-            if not token or token not in users_sessions:
-                return jsonify({'error': 'Não autorizado'}), 401
-            
-            # Verificar se sessão expirou
-            session_data = users_sessions[token]
-            if datetime.now().timestamp() > session_data['expires_at']:
-                del users_sessions[token]
-                return jsonify({'error': 'Sessão expirada'}), 401
-            
-            # Atualizar tempo de expiração
-            session_data['expires_at'] = datetime.now().timestamp() + 3600
-            
-            return f(*args, **kwargs)
-        decorated_function.__name__ = f.__name__
-        return decorated_function
-
-    def get_current_user_id():
-        """Obtém o ID do usuário atual baseado no token"""
-        auth_header = request.headers.get('Authorization')
-        session_token = request.cookies.get('session_token')
-        
-        token = None
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-        elif session_token:
-            token = session_token
-        
-        if token and token in users_sessions:
-            return users_sessions[token]['user_id']
-        return None
+    # Inicializar JWT
+    jwt = JWTManager(app)
 
     # Rota de saúde
     @app.route('/')
@@ -92,15 +53,12 @@ def create_app():
             with get_db_connection() as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 
-                # Testar consulta simples
                 cursor.execute("SELECT 1 as test")
                 result = cursor.fetchone()
                 
-                # Testar contar colaboradores
                 cursor.execute("SELECT COUNT(*) as count FROM colaborador")
                 count_result = cursor.fetchone()
                 
-                # Testar lista de tabelas
                 cursor.execute("""
                     SELECT table_name 
                     FROM information_schema.tables 
@@ -121,57 +79,47 @@ def create_app():
                 'error': str(e)
             }), 500
 
-    # 🔒 ROTA DE LOGIN SEGURA
+    # 🔐 ROTA DE LOGIN COM JWT
     @app.route('/api/login', methods=['POST', 'OPTIONS'])
     def login():
         if request.method == 'OPTIONS':
             return '', 200
             
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        
-        if not username or not password:
-            return jsonify({'error': 'Usuário e senha são obrigatórios'}), 400
-        
-        # Verificação no banco de dados
         try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Dados não fornecidos'}), 400
+                
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not username or not password:
+                return jsonify({'error': 'Usuário e senha são obrigatórios'}), 400
+            
+            # Verificação no banco de dados
             with get_db_connection() as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute("SELECT * FROM usuario WHERE username = %s", (username,))
                 user_data = cursor.fetchone()
                 
                 if user_data:
-                    # 🔒 VERIFICAÇÃO CORRETA COM werkzeug
-                    from werkzeug.security import check_password_hash
+                    # Verificar senha com werkzeug
                     if check_password_hash(user_data['password_hash'], password):
-                        # Gerar token de sessão seguro
-                        session_token = secrets.token_urlsafe(32)
-                        
-                        # Salvar sessão
-                        users_sessions[session_token] = {
-                            'user_id': user_data['id'],
-                            'username': user_data['username'],
-                            'expires_at': datetime.now().timestamp() + 3600
-                        }
-                        
-                        response = jsonify({
-                            'message': 'Login bem-sucedido', 
-                            'username': user_data['username'],
-                            'user_id': user_data['id']
-                        })
-                        
-                        # 🔒 Setar cookie seguro para cross-site
-                        response.set_cookie(
-                            'session_token',
-                            value=session_token,
-                            httponly=True,
-                            secure=True,
-                            samesite='None',
-                            max_age=3600
+                        # ✅ CORREÇÃO: Criar token JWT
+                        access_token = create_access_token(
+                            identity=user_data['id'],
+                            additional_claims={
+                                'username': user_data['username'],
+                                'email': user_data.get('email', '')
+                            }
                         )
                         
-                        return response, 200
+                        return jsonify({
+                            'message': 'Login bem-sucedido',
+                            'access_token': access_token,  # ← AGORA RETORNA JWT TOKEN
+                            'user_id': user_data['id'],
+                            'username': user_data['username']
+                        }), 200
                 
                 return jsonify({'error': 'Credenciais inválidas'}), 401
                 
@@ -179,59 +127,82 @@ def create_app():
             logger.error(f"Erro no login: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
-    # 🔒 ROTA DE LOGOUT
+    # 🔐 ROTA DE LOGOUT
     @app.route('/api/logout', methods=['POST'])
-    @login_required
+    @jwt_required()
     def logout():
-        session_token = request.cookies.get('session_token')
-        if session_token and session_token in users_sessions:
-            del users_sessions[session_token]
-        
-        response = jsonify({'message': 'Logout bem-sucedido'})
-        response.set_cookie('session_token', '', expires=0)
-        return response
+        # JWT é stateless, então basta o frontend descartar o token
+        return jsonify({'message': 'Logout bem-sucedido'})
 
-    @app.route('/api/auth/status', methods=['GET', 'OPTIONS'])
+    # 🔐 STATUS DE AUTENTICAÇÃO
+    @app.route('/api/auth/status', methods=['GET'])
+    @jwt_required()
     def auth_status():
-        if request.method == 'OPTIONS':
-            return '', 200
-        
-        user_id = get_current_user_id()
-        if user_id:
-            return jsonify({
-                'logged_in': True, 
-                'username': 'admin',  # Em produção, buscar do banco
-                'user_id': user_id
-            }), 200
-        else:
-            return jsonify({'logged_in': False}), 200
-
-    # 🔥 ROTAS DE COLABORADORES (COM CONNECTION MANAGER)
-    @app.route('/api/colaboradores', methods=['GET'])
-    @login_required
-    def listar_colaboradores():
         try:
+            current_user_id = get_jwt_identity()
+            
             with get_db_connection() as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("SELECT * FROM colaborador ORDER BY nome")
+                cursor.execute("SELECT id, username, email FROM usuario WHERE id = %s", (current_user_id,))
+                user_data = cursor.fetchone()
+                
+                if user_data:
+                    return jsonify({
+                        'logged_in': True,
+                        'user_id': user_data['id'],
+                        'username': user_data['username'],
+                        'email': user_data['email']
+                    })
+                else:
+                    return jsonify({'logged_in': False}), 401
+                    
+        except Exception as e:
+            logger.error(f"Erro no status: {e}")
+            return jsonify({'logged_in': False}), 401
+
+    # 🔥 ROTAS DE COLABORADORES (PROTEGIDAS COM JWT)
+    @app.route('/api/colaboradores', methods=['GET'])
+    @jwt_required()
+    def listar_colaboradores():
+        try:
+            current_user_id = get_jwt_identity()
+            
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                # ✅ CORREÇÃO: Filtrar por usuário logado
+                cursor.execute("""
+                    SELECT c.*, u.username as usuario_nome 
+                    FROM colaborador c 
+                    LEFT JOIN usuario u ON c.usuario_id = u.id 
+                    WHERE c.usuario_id = %s 
+                    ORDER BY c.nome
+                """, (current_user_id,))
+                
                 colaboradores = cursor.fetchall()
                 return jsonify(colaboradores)
                 
         except Exception as e:
             logger.error(f"Erro ao buscar colaboradores: {str(e)}", exc_info=True)
-            return jsonify({
-                'error': 'Erro interno do servidor',
-                'details': str(e)
-            }), 500
+            return jsonify({'error': 'Erro interno do servidor'}), 500
 
-    # 🔥 ROTAS DE DESPESAS (COM CONNECTION MANAGER)
+    # 🔥 ROTAS DE DESPESAS (PROTEGIDAS COM JWT)
     @app.route('/api/despesas', methods=['GET'])
-    @login_required
+    @jwt_required()
     def listar_despesas():
         try:
+            current_user_id = get_jwt_identity()
+            
             with get_db_connection() as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("SELECT * FROM despesa ORDER BY data_compra DESC")
+                # ✅ CORREÇÃO: Filtrar por usuário logado
+                cursor.execute("""
+                    SELECT d.*, c.nome as colaborador_nome 
+                    FROM despesa d 
+                    LEFT JOIN colaborador c ON d.colaborador_id = c.id 
+                    WHERE c.usuario_id = %s 
+                    ORDER BY d.data_compra DESC
+                """, (current_user_id,))
+                
                 despesas = cursor.fetchall()
                 
                 # Converter para JSON
@@ -248,9 +219,10 @@ def create_app():
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
     @app.route('/api/despesas', methods=['POST'])
-    @login_required
+    @jwt_required()
     def criar_despesa():
         try:
+            current_user_id = get_jwt_identity()
             data = request.get_json()
             
             if not data:
@@ -287,7 +259,16 @@ def create_app():
             data_obj = datetime.strptime(data_compra, '%Y-%m-%d')
             mes_vigente = data_obj.strftime('%Y-%m')
             
+            # ✅ CORREÇÃO: Verificar se colaborador pertence ao usuário
             with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT id FROM colaborador WHERE id = %s AND usuario_id = %s", 
+                             (colaborador_id, current_user_id))
+                colaborador_valido = cursor.fetchone()
+                
+                if not colaborador_valido:
+                    return jsonify({'error': 'Colaborador não encontrado ou não pertence ao usuário'}), 400
+            
                 cursor = conn.cursor()
                 cursor.execute(
                     """INSERT INTO despesa 
@@ -315,14 +296,23 @@ def create_app():
             logger.error(f"Erro ao criar despesa: {str(e)}")
             return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
-    # 🔥 OUTRAS ROTAS (COM CONNECTION MANAGER)
+    # 🔥 OUTRAS ROTAS (PROTEGIDAS COM JWT)
     @app.route('/api/rendas', methods=['GET'])
-    @login_required
+    @jwt_required()
     def listar_rendas():
         try:
+            current_user_id = get_jwt_identity()
+            
             with get_db_connection() as conn:
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("SELECT * FROM renda_mensal ORDER BY mes_ano DESC")
+                # ✅ CORREÇÃO: Filtrar por usuário logado
+                cursor.execute("""
+                    SELECT r.* 
+                    FROM renda_mensal r 
+                    WHERE r.usuario_id = %s 
+                    ORDER BY r.mes_ano DESC
+                """, (current_user_id,))
+                
                 rendas = cursor.fetchall()
                 
                 for renda in rendas:
@@ -336,23 +326,57 @@ def create_app():
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
     @app.route('/api/resumo', methods=['GET'])
-    @login_required
+    @jwt_required()
     def obter_resumo():
-        return jsonify({
-            'total_despesas': 0,
-            'total_rendas': 0,
-            'saldo': 0,
-            'message': 'Resumo carregado com sucesso'
-        })
+        try:
+            current_user_id = get_jwt_identity()
+            
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                
+                # Total despesas
+                cursor.execute("""
+                    SELECT COALESCE(SUM(d.valor), 0) as total_despesas
+                    FROM despesa d
+                    JOIN colaborador c ON d.colaborador_id = c.id
+                    WHERE c.usuario_id = %s
+                """, (current_user_id,))
+                total_despesas = cursor.fetchone()['total_despesas'] or 0
+                
+                # Total rendas
+                cursor.execute("""
+                    SELECT COALESCE(SUM(valor), 0) as total_rendas
+                    FROM renda_mensal 
+                    WHERE usuario_id = %s
+                """, (current_user_id,))
+                total_rendas = cursor.fetchone()['total_rendas'] or 0
+                
+                saldo = total_rendas - total_despesas
+                
+                return jsonify({
+                    'total_despesas': float(total_despesas),
+                    'total_rendas': float(total_rendas),
+                    'saldo': float(saldo),
+                    'message': 'Resumo carregado com sucesso'
+                })
+                
+        except Exception as e:
+            logger.error(f"Erro ao buscar resumo: {str(e)}")
+            return jsonify({
+                'total_despesas': 0,
+                'total_rendas': 0,
+                'saldo': 0,
+                'error': 'Erro ao calcular resumo'
+            }), 500
 
     @app.route('/api/divisao', methods=['GET'])
-    @login_required
+    @jwt_required()
     def obter_divisao():
         return jsonify([])
 
     return app
 
-# Mantemos a função WSGI
+# Função WSGI mantida
 def application(environ, start_response):
     app = create_app()
     return app(environ, start_response)

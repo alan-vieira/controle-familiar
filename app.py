@@ -142,9 +142,9 @@ def create_app():
                 user_data = cursor.fetchone()
                 
                 if user_data:
-                    # 🔒 Em produção, use bcrypt para verificar a senha
-                    # Por enquanto, verificação simples
-                    if user_data['password_hash'].endswith('admin123'):  # Verificação simplificada
+                    # 🔒 VERIFICAÇÃO CORRETA COM werkzeug
+                    from werkzeug.security import check_password_hash
+                    if check_password_hash(user_data['password_hash'], password):
                         # Gerar token de sessão seguro
                         session_token = secrets.token_urlsafe(32)
                         
@@ -152,7 +152,7 @@ def create_app():
                         users_sessions[session_token] = {
                             'user_id': user_data['id'],
                             'username': user_data['username'],
-                            'expires_at': datetime.now().timestamp() + 3600  # 1 hora
+                            'expires_at': datetime.now().timestamp() + 3600
                         }
                         
                         response = jsonify({
@@ -172,9 +172,9 @@ def create_app():
                         )
                         
                         return response, 200
-            
-            return jsonify({'error': 'Credenciais inválidas'}), 401
-            
+                
+                return jsonify({'error': 'Credenciais inválidas'}), 401
+                
         except Exception as e:
             logger.error(f"Erro no login: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500

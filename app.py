@@ -1,9 +1,11 @@
 import os
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
-from database import get_db_connection
 from datetime import datetime
 import logging
+from connection import get_db_connection
+from config import SECRET_KEY
+from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ def login_required(f):
 
 def create_app():
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+    app.config['SECRET_KEY'] = SECRET_KEY
 
     # CORS básico
     CORS(app, origins=['https://controle-familiar-frontend.vercel.app'], supports_credentials=True)
@@ -34,18 +36,41 @@ def create_app():
     def health():
         return jsonify({'status': 'OK'})
 
-    # Rota de debug
-    @app.route('/debug/routes')
-    def debug_routes():
-        routes = []
-        for rule in app.url_map.iter_rules():
-            if not rule.rule.startswith('/static/'):
-                routes.append({
-                    'endpoint': rule.endpoint,
-                    'methods': list(rule.methods),
-                    'path': str(rule)
+    # 🔥 ROTA DE DEBUG DO BANCO
+    @app.route('/debug/db-test')
+    def debug_db_test():
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                
+                # Testar consulta simples
+                cursor.execute("SELECT 1 as test")
+                result = cursor.fetchone()
+                
+                # Testar contar colaboradores
+                cursor.execute("SELECT COUNT(*) as count FROM colaborador")
+                count_result = cursor.fetchone()
+                
+                # Testar lista de tabelas
+                cursor.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public'
+                """)
+                tables = cursor.fetchall()
+                
+                return jsonify({
+                    'database_connection': 'OK',
+                    'test_query': result,
+                    'colaboradores_count': count_result,
+                    'tables': [table['table_name'] for table in tables]
                 })
-        return jsonify({'routes': routes})
+                
+        except Exception as e:
+            return jsonify({
+                'database_connection': 'ERROR',
+                'error': str(e)
+            }), 500
 
     # Rota de login simplificada
     @app.route('/api/login', methods=['POST', 'OPTIONS'])
@@ -82,49 +107,43 @@ def create_app():
         else:
             return jsonify({'logged_in': False}), 200
 
-    # 🔥 ROTAS DE COLABORADORES
+    # 🔥 ROTAS DE COLABORADORES (COM CONNECTION MANAGER)
     @app.route('/api/colaboradores', methods=['GET'])
     @login_required
     def listar_colaboradores():
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            cursor.execute("SELECT * FROM colaborador ORDER BY nome")
-            colaboradores = cursor.fetchall()
-            
-            cursor.close()
-            conn.close()
-            
-            return jsonify(colaboradores)
-            
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT * FROM colaborador ORDER BY nome")
+                colaboradores = cursor.fetchall()
+                return jsonify(colaboradores)
+                
         except Exception as e:
-            logger.error(f"Erro ao buscar colaboradores: {str(e)}")
-            return jsonify({'error': 'Erro interno do servidor'}), 500
+            logger.error(f"Erro ao buscar colaboradores: {str(e)}", exc_info=True)
+            return jsonify({
+                'error': 'Erro interno do servidor',
+                'details': str(e)
+            }), 500
 
-    # 🔥 ROTAS DE DESPESAS
+    # 🔥 ROTAS DE DESPESAS (COM CONNECTION MANAGER)
     @app.route('/api/despesas', methods=['GET'])
     @login_required
     def listar_despesas():
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            cursor.execute("SELECT * FROM despesa ORDER BY data_compra DESC")
-            despesas = cursor.fetchall()
-            
-            cursor.close()
-            conn.close()
-            
-            # Converter para JSON
-            for despesa in despesas:
-                if despesa.get('data_compra'):
-                    despesa['data_compra'] = despesa['data_compra'].isoformat()
-                if despesa.get('valor'):
-                    despesa['valor'] = float(despesa['valor'])
-            
-            return jsonify(despesas)
-            
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT * FROM despesa ORDER BY data_compra DESC")
+                despesas = cursor.fetchall()
+                
+                # Converter para JSON
+                for despesa in despesas:
+                    if despesa.get('data_compra'):
+                        despesa['data_compra'] = despesa['data_compra'].isoformat()
+                    if despesa.get('valor'):
+                        despesa['valor'] = float(despesa['valor'])
+                
+                return jsonify(despesas)
+                
         except Exception as e:
             logger.error(f"Erro ao buscar despesas: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
@@ -169,58 +188,50 @@ def create_app():
             data_obj = datetime.strptime(data_compra, '%Y-%m-%d')
             mes_vigente = data_obj.strftime('%Y-%m')
             
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                """INSERT INTO despesa 
-                   (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
-            )
-            
-            conn.commit()
-            despesa_id = cursor.lastrowid
-            
-            cursor.close()
-            conn.close()
-            
-            return jsonify({
-                'id': despesa_id,
-                'data_compra': data_compra,
-                'mes_vigente': mes_vigente,
-                'descricao': data['descricao'],
-                'valor': valor,
-                'tipo_pg': data['tipo_pg'],
-                'colaborador_id': colaborador_id,
-                'categoria': data['categoria'],
-                'message': 'Despesa criada com sucesso'
-            }), 201
-            
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT INTO despesa 
+                       (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
+                )
+                
+                despesa_id = cursor.fetchone()[0]
+                conn.commit()
+                
+                return jsonify({
+                    'id': despesa_id,
+                    'data_compra': data_compra,
+                    'mes_vigente': mes_vigente,
+                    'descricao': data['descricao'],
+                    'valor': valor,
+                    'tipo_pg': data['tipo_pg'],
+                    'colaborador_id': colaborador_id,
+                    'categoria': data['categoria'],
+                    'message': 'Despesa criada com sucesso'
+                }), 201
+                
         except Exception as e:
             logger.error(f"Erro ao criar despesa: {str(e)}")
             return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
-    # 🔥 OUTRAS ROTAS
+    # 🔥 OUTRAS ROTAS (COM CONNECTION MANAGER)
     @app.route('/api/rendas', methods=['GET'])
     @login_required
     def listar_rendas():
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            cursor.execute("SELECT * FROM renda_mensal ORDER BY mes_ano DESC")
-            rendas = cursor.fetchall()
-            
-            cursor.close()
-            conn.close()
-            
-            for renda in rendas:
-                if renda.get('valor'):
-                    renda['valor'] = float(renda['valor'])
-            
-            return jsonify(rendas)
-            
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT * FROM renda_mensal ORDER BY mes_ano DESC")
+                rendas = cursor.fetchall()
+                
+                for renda in rendas:
+                    if renda.get('valor'):
+                        renda['valor'] = float(renda['valor'])
+                
+                return jsonify(rendas)
+                
         except Exception as e:
             logger.error(f"Erro ao buscar rendas: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500

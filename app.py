@@ -12,9 +12,9 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret-key-change-in-production')
     
-    # CONFIGURAÇÃO CRUCIAL PARA SESSÕES ENTRE DOMÍNIOS
+    # CONFIGURAÇÃO CRUCIAL PARA SESSÕES ENTRE DOMÍNIOS - CORRIGIDA!
     app.config.update(
-        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SAMESITE="None",  # ← "None" para cross-domain
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True
     )
@@ -68,7 +68,6 @@ def create_app():
         
         # DEBUG: Mostrar qual path está sendo acessado
         print(f"🔍 Path acessado: {request.path}")
-        print(f"🔍 Public paths: {public_paths}")
         
         # Se a rota atual está na lista de públicas, não proteger
         if request.path in public_paths:
@@ -106,13 +105,9 @@ def create_app():
             from models import Usuario
             user = Usuario.get_by_username(username)
             
-            print(f"🔍 DEBUG LOGIN - Usuário encontrado: {user is not None}")
-            if user:
-                print(f"🔍 DEBUG LOGIN - Hash no banco: {user.password}")
-                print(f"🔍 DEBUG LOGIN - Check password result: {user.check_password(password)}")
-            
             if user and user.check_password(password):
                 login_user(user, remember=True)
+                print(f"✅ USUÁRIO LOGADO: {user.username} (ID: {user.id})")
                 return jsonify({
                     'message': 'Login bem-sucedido', 
                     'username': user.username,

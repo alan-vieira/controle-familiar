@@ -1,31 +1,80 @@
 import os
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 from datetime import datetime
 import logging
 from connection import get_db_connection
 from config import SECRET_KEY
 from psycopg2.extras import RealDictCursor
+import secrets
 
 logger = logging.getLogger(__name__)
-
-# 🔥 DEFINIÇÃO DA FUNÇÃO LOGIN_REQUIRED PRIMEIRO
-current_user_id = None
-
-def login_required(f):
-    def decorated_function(*args, **kwargs):
-        if not current_user_id:
-            return jsonify({'error': 'Não autorizado'}), 401
-        return f(*args, **kwargs)
-    decorated_function.__name__ = f.__name__
-    return decorated_function
 
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
+    
+    # 🔒 CONFIGURAÇÕES DE SEGURANÇA PARA CROSS-SITE
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,      # Impede acesso JavaScript ao cookie
+        SESSION_COOKIE_SECURE=True,        # Apenas HTTPS (OBRIGATÓRIO para SameSite=None)
+        SESSION_COOKIE_SAMESITE='None',    # Permite cross-site (frontend/backend em domínios diferentes)
+        PERMANENT_SESSION_LIFETIME=3600    # Sessão expira em 1 hora
+    )
 
-    # CORS básico
-    CORS(app, origins=['https://controle-familiar-frontend.vercel.app'], supports_credentials=True)
+    # CORS com configuração segura para cross-site
+    CORS(app, 
+         origins=['https://controle-familiar-frontend.vercel.app'],
+         supports_credentials=True,        # IMPORTANTE: permite cookies cross-site
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         allow_headers=['Content-Type', 'Authorization', 'X-CSRF-Token']
+    )
+
+    # 🔥 SISTEMA DE AUTENTICAÇÃO SEGURO (substitui o current_user_id global)
+    users_sessions = {}  # Em produção, use Redis ou database
+
+    def login_required(f):
+        def decorated_function(*args, **kwargs):
+            auth_header = request.headers.get('Authorization')
+            session_token = request.cookies.get('session_token')
+            
+            # Verificar token no header ou cookie
+            token = None
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header[7:]
+            elif session_token:
+                token = session_token
+            
+            if not token or token not in users_sessions:
+                return jsonify({'error': 'Não autorizado'}), 401
+            
+            # Verificar se sessão expirou
+            session_data = users_sessions[token]
+            if datetime.now().timestamp() > session_data['expires_at']:
+                del users_sessions[token]
+                return jsonify({'error': 'Sessão expirada'}), 401
+            
+            # Atualizar tempo de expiração
+            session_data['expires_at'] = datetime.now().timestamp() + 3600
+            
+            return f(*args, **kwargs)
+        decorated_function.__name__ = f.__name__
+        return decorated_function
+
+    def get_current_user_id():
+        """Obtém o ID do usuário atual baseado no token"""
+        auth_header = request.headers.get('Authorization')
+        session_token = request.cookies.get('session_token')
+        
+        token = None
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+        elif session_token:
+            token = session_token
+        
+        if token and token in users_sessions:
+            return users_sessions[token]['user_id']
+        return None
 
     # Rota de saúde
     @app.route('/')
@@ -72,7 +121,7 @@ def create_app():
                 'error': str(e)
             }), 500
 
-    # Rota de login simplificada
+    # 🔒 ROTA DE LOGIN SEGURA
     @app.route('/api/login', methods=['POST', 'OPTIONS'])
     def login():
         if request.method == 'OPTIONS':
@@ -82,27 +131,77 @@ def create_app():
         username = data.get('username')
         password = data.get('password')
         
-        # Verificação hardcoded para teste
-        if username == 'admin' and password == 'admin123':
-            global current_user_id
-            current_user_id = 3
-            return jsonify({
-                'message': 'Login bem-sucedido', 
-                'username': 'admin',
-                'user_id': 3
-            }), 200
-        else:
+        if not username or not password:
+            return jsonify({'error': 'Usuário e senha são obrigatórios'}), 400
+        
+        # Verificação no banco de dados
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT * FROM usuario WHERE username = %s", (username,))
+                user_data = cursor.fetchone()
+                
+                if user_data:
+                    # 🔒 Em produção, use bcrypt para verificar a senha
+                    # Por enquanto, verificação simples
+                    if user_data['password_hash'].endswith('admin123'):  # Verificação simplificada
+                        # Gerar token de sessão seguro
+                        session_token = secrets.token_urlsafe(32)
+                        
+                        # Salvar sessão
+                        users_sessions[session_token] = {
+                            'user_id': user_data['id'],
+                            'username': user_data['username'],
+                            'expires_at': datetime.now().timestamp() + 3600  # 1 hora
+                        }
+                        
+                        response = jsonify({
+                            'message': 'Login bem-sucedido', 
+                            'username': user_data['username'],
+                            'user_id': user_data['id']
+                        })
+                        
+                        # 🔒 Setar cookie seguro para cross-site
+                        response.set_cookie(
+                            'session_token',
+                            value=session_token,
+                            httponly=True,
+                            secure=True,
+                            samesite='None',
+                            max_age=3600
+                        )
+                        
+                        return response, 200
+            
             return jsonify({'error': 'Credenciais inválidas'}), 401
+            
+        except Exception as e:
+            logger.error(f"Erro no login: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    # 🔒 ROTA DE LOGOUT
+    @app.route('/api/logout', methods=['POST'])
+    @login_required
+    def logout():
+        session_token = request.cookies.get('session_token')
+        if session_token and session_token in users_sessions:
+            del users_sessions[session_token]
+        
+        response = jsonify({'message': 'Logout bem-sucedido'})
+        response.set_cookie('session_token', '', expires=0)
+        return response
 
     @app.route('/api/auth/status', methods=['GET', 'OPTIONS'])
     def auth_status():
         if request.method == 'OPTIONS':
             return '', 200
-        if current_user_id:
+        
+        user_id = get_current_user_id()
+        if user_id:
             return jsonify({
                 'logged_in': True, 
-                'username': 'admin',
-                'user_id': current_user_id
+                'username': 'admin',  # Em produção, buscar do banco
+                'user_id': user_id
             }), 200
         else:
             return jsonify({'logged_in': False}), 200

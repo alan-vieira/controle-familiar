@@ -122,10 +122,10 @@ def create_app():
                         }), 200
                 
                 return jsonify({'error': 'Credenciais inválidas'}), 401
-            
-    except Exception as e:
-        logger.error(f"Erro no login: {e}")
-        return jsonify({'error': 'Erro interno do servidor'}), 500
+                
+        except Exception as e:
+            logger.error(f"Erro no login: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
 
     # 🔐 ROTA DE LOGOUT
     @app.route('/api/logout', methods=['POST'])

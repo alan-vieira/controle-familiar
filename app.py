@@ -12,25 +12,15 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret-key-change-in-production')
     
-    # CONFIGURAÇÃO CRUCIAL PARA SESSÕES ENTRE DOMÍNIOS - CORRIGIDA!
+    # CONFIGURAÇÃO CRUCIAL PARA SESSÕES ENTRE DOMÍNIOS
     app.config.update(
-        SESSION_COOKIE_SAMESITE="None",  # ← "None" para cross-domain
+        SESSION_COOKIE_SAMESITE="None",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True
     )
 
-    # CORS com credenciais - IMPORTANTE para Vercel + Render
-    CORS(
-        app,
-        origins=[
-            "https://controle-familiar-frontend.vercel.app",
-            "http://localhost:3000"  # Para desenvolvimento
-        ],
-        supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        expose_headers=["Set-Cookie"]
-    )
+    # 🔥 CORS SIMPLES - APENAS ESTA LINHA
+    CORS(app, supports_credentials=True)
 
     # Configuração do Flask-Login
     login_manager = LoginManager()
@@ -50,13 +40,6 @@ def create_app():
     app.register_blueprint(rendas_bp, url_prefix='/api')
     app.register_blueprint(resumo_bp, url_prefix='/api')
     app.register_blueprint(divisao_bp, url_prefix='/api')
-
-    # 🔥 ADICIONE ESTAS LINHAS - CORS para cada blueprint
-    CORS(colaboradores_bp, supports_credentials=True)
-    CORS(despesas_bp, supports_credentials=True)
-    CORS(rendas_bp, supports_credentials=True)
-    CORS(resumo_bp, supports_credentials=True)
-    CORS(divisao_bp, supports_credentials=True)
 
     # --- PROTEGER TODAS AS ROTAS DA API ---
     @app.before_request
@@ -164,55 +147,6 @@ def create_app():
             return jsonify({'message': 'Usuário admin criado'}), 201
         except Exception as e:
             return jsonify({'error': str(e)}), 400
-
-    # Rota para debug do hash (REMOVER EM PRODUÇÃO)
-    @app.route('/api/debug-hash', methods=['GET'])
-    def debug_hash():
-        try:
-            from database import get_db_connection
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT username, password_hash FROM usuario WHERE username = 'admin'")
-            user = cursor.fetchone()
-            cursor.close()
-            conn.close()
-            
-            return jsonify({
-                'username': user['username'],
-                'password_hash': user['password_hash']
-            }), 200
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-
-    # Rota para resetar senha do admin (REMOVER EM PRODUÇÃO)
-    @app.route('/api/reset-admin', methods=['POST'])
-    def reset_admin():
-        try:
-            from database import get_db_connection
-            from werkzeug.security import generate_password_hash
-            
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Deletar admin existente
-            cursor.execute("DELETE FROM usuario WHERE username = 'admin'")
-            
-            # Recriar admin com senha conhecida
-            hashed_password = generate_password_hash('admin123')
-            
-            cursor.execute(
-                "INSERT INTO usuario (username, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
-                ('admin', 'admin@familia.com', hashed_password)
-            )
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            return jsonify({'message': 'Admin resetado com senha: admin123'}), 200
-            
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
 
     return app
 

@@ -1,77 +1,83 @@
 from flask import Blueprint, request, jsonify
 from flask_login import login_required
-from connection import get_db_connection
+from database import get_db_connection
+import logging
+
+logger = logging.getLogger(__name__)
 
 colaboradores_bp = Blueprint('colaboradores', __name__)
 
-@colaboradores_bp.route('/colaboradores', methods=['GET', 'POST'])
+@colaboradores_bp.route('/api/colaboradores', methods=['GET'])
 @login_required
-def colaboradores():
+def listar_colaboradores():
     try:
-        if request.method == 'GET':
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, nome, dia_fechamento FROM colaborador ORDER BY nome")
-                    colabs = [dict(r) for r in cur.fetchall()]
-                    return jsonify({"colaboradores": colabs})
-        else:  # POST
-            data = request.json
-            if not data or 'nome' not in data or 'dia_fechamento' not in data:
-                return jsonify({"error": "Nome e dia_fechamento são obrigatórios"}), 400
-            
-            # Validar dia_fechamento
-            dia = data['dia_fechamento']
-            if not isinstance(dia, int) or dia < 1 or dia > 31:
-                return jsonify({"error": "Dia de fechamento deve ser entre 1 e 31"}), 400
-            
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s) RETURNING id",
-                        (data['nome'], data['dia_fechamento'])
-                    )
-                    conn.commit()
-                    result = cur.fetchone()
-                    return jsonify({"id": result['id']}), 201  # ✅ Corrigido: result['id']
-    
-    except Exception as e:
-        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
-
-@colaboradores_bp.route('/colaboradores/<int:id>', methods=['PUT', 'DELETE'])
-@login_required
-def colaborador_id(id):
-    try:
-        if request.method == 'PUT':
-            data = request.json
-            if not data or 'nome' not in data or 'dia_fechamento' not in data:
-                return jsonify({"error": "Nome e dia_fechamento são obrigatórios"}), 400
-            
-            # Validar dia_fechamento
-            dia = data['dia_fechamento']
-            if not isinstance(dia, int) or dia < 1 or dia > 31:
-                return jsonify({"error": "Dia de fechamento deve ser entre 1 e 31"}), 400
-            
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE colaborador SET nome=%s, dia_fechamento=%s WHERE id=%s",
-                        (data['nome'], data['dia_fechamento'], id)
-                    )
-                    conn.commit()
-                    # Verificar se algum registro foi atualizado
-                    if cur.rowcount == 0:
-                        return jsonify({"error": "Colaborador não encontrado"}), 404
-                    return jsonify({"message": "Atualizado"})
+        logger.info("GET /api/colaboradores - Iniciando")
         
-        else:  # DELETE
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM colaborador WHERE id=%s", (id,))
-                    conn.commit()
-                    # Verificar se algum registro foi deletado
-                    if cur.rowcount == 0:
-                        return jsonify({"error": "Colaborador não encontrado"}), 404
-                    return jsonify({"message": "Deletado"})
-    
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)  # Retorna dicionários
+        
+        cursor.execute("SELECT * FROM colaborador ORDER BY nome")
+        colaboradores = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"GET /api/colaboradores - Encontrados {len(colaboradores)} registros")
+        return jsonify(colaboradores)
+        
     except Exception as e:
-        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+        logger.error(f"ERRO GET /api/colaboradores: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Erro ao buscar colaboradores'}), 500
+
+@colaboradores_bp.route('/api/colaboradores', methods=['POST'])
+@login_required
+def criar_colaborador():
+    try:
+        data = request.get_json()
+        logger.info(f"POST /api/colaboradores - Dados: {data}")
+        
+        if not data:
+            return jsonify({'error': 'Dados JSON inválidos'}), 400
+        
+        required = ['nome', 'dia_fechamento']
+        missing = [field for field in required if field not in data or data[field] in [None, '']]
+        
+        if missing:
+            return jsonify({'error': f'Campos obrigatórios faltando: {missing}'}), 400
+        
+        # Validar dia_fechamento
+        try:
+            dia = int(data['dia_fechamento'])
+            if dia < 1 or dia > 31:
+                return jsonify({'error': 'dia_fechamento deve estar entre 1 e 31'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'dia_fechamento deve ser um número'}), 400
+        
+        # Inserir no banco
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s)",
+            (data['nome'], dia)
+        )
+        
+        conn.commit()
+        colaborador_id = cursor.lastrowid
+        
+        cursor.close()
+        conn.close()
+        
+        response_data = {
+            'id': colaborador_id,
+            'nome': data['nome'],
+            'dia_fechamento': dia,
+            'message': 'Colaborador criado com sucesso'
+        }
+        
+        logger.info(f"POST /api/colaboradores - Sucesso: {response_data}")
+        return jsonify(response_data), 201
+        
+    except Exception as e:
+        logger.error(f"ERRO POST /api/colaboradores: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Erro interno: {str(e)}'}), 500

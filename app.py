@@ -105,9 +105,9 @@ def create_app():
                 if user_data:
                     # Verificar senha com werkzeug
                     if check_password_hash(user_data['password_hash'], password):
-                        # ✅ CORREÇÃO: Criar token JWT
+                        # ✅ CORREÇÃO: Garantir que identity seja string
                         access_token = create_access_token(
-                            identity=user_data['id'],
+                            identity=str(user_data['id']),  # ← CONVERTER PARA STRING
                             additional_claims={
                                 'username': user_data['username'],
                                 'email': user_data.get('email', '')
@@ -116,16 +116,16 @@ def create_app():
                         
                         return jsonify({
                             'message': 'Login bem-sucedido',
-                            'access_token': access_token,  # ← AGORA RETORNA JWT TOKEN
+                            'access_token': access_token,
                             'user_id': user_data['id'],
                             'username': user_data['username']
                         }), 200
                 
                 return jsonify({'error': 'Credenciais inválidas'}), 401
-                
-        except Exception as e:
-            logger.error(f"Erro no login: {e}")
-            return jsonify({'error': 'Erro interno do servidor'}), 500
+            
+    except Exception as e:
+        logger.error(f"Erro no login: {e}")
+        return jsonify({'error': 'Erro interno do servidor'}), 500
 
     # 🔐 ROTA DE LOGOUT
     @app.route('/api/logout', methods=['POST'])

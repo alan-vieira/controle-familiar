@@ -28,7 +28,7 @@ def create_app():
         ],
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         expose_headers=["Set-Cookie"]
     )
 

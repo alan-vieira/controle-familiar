@@ -1,60 +1,40 @@
 import os
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
-from flask_login import LoginManager, login_user, logout_user, current_user
 from database import get_db_connection
 from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
 
+# 🔥 DEFINIÇÃO DA FUNÇÃO LOGIN_REQUIRED PRIMEIRO
+current_user_id = None
+
+def login_required(f):
+    def decorated_function(*args, **kwargs):
+        if not current_user_id:
+            return jsonify({'error': 'Não autorizado'}), 401
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
 def create_app():
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret-key-change-in-production')
-    
-    # CONFIGURAÇÃO SIMPLES E FUNCIONAL
-    app.config.update(
-        SESSION_COOKIE_SAMESITE="None",
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_HTTPONLY=True
-    )
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
-    # CORS SIMPLES
-    CORS(app, supports_credentials=True)
+    # CORS básico
+    CORS(app, origins=['https://controle-familiar-frontend.vercel.app'], supports_credentials=True)
 
-    # Configuração do Flask-Login
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = 'login'
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        from models import Usuario
-        return Usuario.get_by_id(int(user_id))
-
-    # 🔥 MIDDLEWARE SIMPLIFICADO
-    @app.before_request
-    def proteger_rotas():
-        # Rotas públicas
-        public_routes = ['/api/login', '/api/auth/status', '/api/logout', '/health', '/', '/debug/routes']
-        if request.path in public_routes:
-            return
-        
-        # Protege APIs
-        if request.path.startswith('/api/') and not current_user.is_authenticated:
-            return jsonify({'error': 'Não autorizado'}), 401
-
-    # 🔥🔥🔥 ROTAS DIRETAS NO APP.PY - GARANTIDO FUNCIONAR
-
-    # ROTAS BÁSICAS
+    # Rota de saúde
     @app.route('/')
     def index():
-        return redirect('https://controle-familiar-frontend.vercel.app')
+        return jsonify({'status': 'healthy', 'message': 'Controle Familiar API'})
 
-    @app.route('/health', methods=['GET'])
+    @app.route('/health')
     def health():
-        return jsonify({'status': 'OK'}), 200
+        return jsonify({'status': 'OK'})
 
+    # Rota de debug
     @app.route('/debug/routes')
     def debug_routes():
         routes = []
@@ -67,7 +47,7 @@ def create_app():
                 })
         return jsonify({'routes': routes})
 
-    # 🔥 ROTAS DE AUTENTICAÇÃO
+    # Rota de login simplificada
     @app.route('/api/login', methods=['POST', 'OPTIONS'])
     def login():
         if request.method == 'OPTIONS':
@@ -77,35 +57,27 @@ def create_app():
         username = data.get('username')
         password = data.get('password')
         
-        from models import Usuario
-        user = Usuario.get_by_username(username)
-        
-        if user and user.check_password(password):
-            login_user(user, remember=True)
+        # Verificação hardcoded para teste
+        if username == 'admin' and password == 'admin123':
+            global current_user_id
+            current_user_id = 3
             return jsonify({
                 'message': 'Login bem-sucedido', 
-                'username': user.username,
-                'user_id': user.id
+                'username': 'admin',
+                'user_id': 3
             }), 200
         else:
             return jsonify({'error': 'Credenciais inválidas'}), 401
-
-    @app.route('/api/logout', methods=['POST', 'OPTIONS'])
-    def logout():
-        if request.method == 'OPTIONS':
-            return '', 200
-        logout_user()
-        return jsonify({'message': 'Logout bem-sucedido'}), 200
 
     @app.route('/api/auth/status', methods=['GET', 'OPTIONS'])
     def auth_status():
         if request.method == 'OPTIONS':
             return '', 200
-        if current_user.is_authenticated:
+        if current_user_id:
             return jsonify({
                 'logged_in': True, 
-                'username': current_user.username,
-                'user_id': current_user.id
+                'username': 'admin',
+                'user_id': current_user_id
             }), 200
         else:
             return jsonify({'logged_in': False}), 200
@@ -128,49 +100,6 @@ def create_app():
             
         except Exception as e:
             logger.error(f"Erro ao buscar colaboradores: {str(e)}")
-            return jsonify({'error': 'Erro interno do servidor'}), 500
-
-    @app.route('/api/colaboradores', methods=['POST'])
-    @login_required
-    def criar_colaborador():
-        try:
-            data = request.get_json()
-            
-            if not data:
-                return jsonify({'error': 'Dados inválidos'}), 400
-                
-            required_fields = ['nome', 'dia_fechamento']
-            for field in required_fields:
-                if field not in data or not data[field]:
-                    return jsonify({'error': f'Campo {field} é obrigatório'}), 400
-            
-            dia = int(data['dia_fechamento'])
-            if dia < 1 or dia > 31:
-                return jsonify({'error': 'dia_fechamento deve estar entre 1 e 31'}), 400
-            
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s)",
-                (data['nome'], dia)
-            )
-            
-            conn.commit()
-            colaborador_id = cursor.lastrowid
-            
-            cursor.close()
-            conn.close()
-            
-            return jsonify({
-                'id': colaborador_id,
-                'nome': data['nome'],
-                'dia_fechamento': dia,
-                'message': 'Colaborador criado com sucesso'
-            }), 201
-            
-        except Exception as e:
-            logger.error(f"Erro ao criar colaborador: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
     # 🔥 ROTAS DE DESPESAS
@@ -209,6 +138,7 @@ def create_app():
             if not data:
                 return jsonify({'error': 'Dados inválidos'}), 400
                 
+            # Campos obrigatórios
             required_fields = ['data_compra', 'descricao', 'valor', 'tipo_pg', 'colaborador_id', 'categoria']
             for field in required_fields:
                 if field not in data or not data[field]:
@@ -224,11 +154,11 @@ def create_app():
             # Validar enums
             tipos_pg_validos = ['credito', 'debito', 'pix', 'dinheiro', 'outros']
             if data['tipo_pg'] not in tipos_pg_validos:
-                return jsonify({'error': f'tipo_pg inválido'}), 400
+                return jsonify({'error': f'tipo_pg inválido. Use: {tipos_pg_validos}'}), 400
             
             categorias_validas = ['moradia', 'alimentacao', 'restaurante_lanche', 'casa_utilidades', 'saude', 'transporte', 'lazer_outros']
             if data['categoria'] not in categorias_validas:
-                return jsonify({'error': f'categoria inválida'}), 400
+                return jsonify({'error': f'categoria inválida. Use: {categorias_validas}'}), 400
             
             # Processar data
             data_compra = data['data_compra']
@@ -271,7 +201,7 @@ def create_app():
             logger.error(f"Erro ao criar despesa: {str(e)}")
             return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
-    # 🔥 OUTRAS ROTAS (MÍNIMAS)
+    # 🔥 OUTRAS ROTAS
     @app.route('/api/rendas', methods=['GET'])
     @login_required
     def listar_rendas():
@@ -320,4 +250,4 @@ def application(environ, start_response):
 if __name__ == '__main__':
     app = create_app()
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port)

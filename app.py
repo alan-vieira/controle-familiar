@@ -121,116 +121,88 @@ def create_app():
     @app.route('/api/colaboradores', methods=['GET'])
     @jwt_required()
     def listar_colaboradores():
-        try:
+        if request.method == 'GET':
             with get_db_connection() as conn:
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("SELECT * FROM colaborador ORDER BY nome")
-                colaboradores = cursor.fetchall()
-                return jsonify(colaboradores)
-                
-        except Exception as e:
-            logger.error(f"Erro ao buscar colaboradores: {str(e)}", exc_info=True)
-            return jsonify({'error': 'Erro interno do servidor'}), 500
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, nome, dia_fechamento FROM colaborador ORDER BY nome")
+                    colabs = [dict(r) for r in cur.fetchall()]
+                    return jsonify({"colaboradores": colabs})
+        else:
+            data = request.json
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s) RETURNING id",
+                        (data['nome'], data['dia_fechamento'])
+                    )
+                    conn.commit()
+                    return jsonify({"id": cur.fetchone()['id']}), 201
 
     # 🔥 ROTAS DE DESPESAS - SEM FILTRO POR USUÁRIO
     @app.route('/api/despesas', methods=['GET'])
     @jwt_required()
     def listar_despesas():
-        try:
+        if request.method == 'GET':
+            mes = request.args.get('mes_vigente')
             with get_db_connection() as conn:
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("""
-                    SELECT d.*, c.nome as colaborador_nome 
-                    FROM despesa d 
-                    LEFT JOIN colaborador c ON d.colaborador_id = c.id 
-                    ORDER BY d.data_compra DESC
-                """)
-                
-                despesas = cursor.fetchall()
-                
-                # Converter para JSON
-                for despesa in despesas:
-                    if despesa.get('data_compra'):
-                        despesa['data_compra'] = despesa['data_compra'].isoformat()
-                    if despesa.get('valor'):
-                        despesa['valor'] = float(despesa['valor'])
-                
-                return jsonify(despesas)
-                
-        except Exception as e:
-            logger.error(f"Erro ao buscar despesas: {str(e)}")
-            return jsonify({'error': 'Erro interno do servidor'}), 500
-
-    @app.route('/api/despesas', methods=['POST'])
-    @jwt_required()
-    def criar_despesa():
-        try:
-            data = request.get_json()
-            
-            if not data:
-                return jsonify({'error': 'Dados inválidos'}), 400
-                
-            # Campos obrigatórios
-            required_fields = ['data_compra', 'descricao', 'valor', 'tipo_pg', 'colaborador_id', 'categoria']
-            for field in required_fields:
-                if field not in data or not data[field]:
-                    return jsonify({'error': f'Campo {field} é obrigatório'}), 400
-            
-            # Validar valores
+                with conn.cursor() as cur:
+                    if mes:
+                        cur.execute("""
+                            SELECT d.*, c.nome AS colaborador_nome
+                            FROM despesa d
+                            JOIN colaborador c ON d.colaborador_id = c.id
+                            WHERE d.mes_vigente = %s
+                        """, (mes,))
+                    else:
+                        cur.execute("""
+                            SELECT d.*, c.nome AS colaborador_nome
+                            FROM despesa d
+                            JOIN colaborador c ON d.colaborador_id = c.id
+                        """)
+                    rows = []
+                    for r in cur.fetchall():
+                        row = dict(r)
+                        if row.get('data_compra'):
+                            row['data_compra'] = row['data_compra'].strftime('%d/%m/%Y')
+                        rows.append(row)
+                    return jsonify(rows)
+        else:
+            data = request.json
             try:
-                valor = float(data['valor'])
-                colaborador_id = int(data['colaborador_id'])
-            except (ValueError, TypeError):
-                return jsonify({'error': 'valor ou colaborador_id inválidos'}), 400
-            
-            # Validar enums
-            tipos_pg_validos = ['credito', 'debito', 'pix', 'dinheiro', 'outros']
-            if data['tipo_pg'] not in tipos_pg_validos:
-                return jsonify({'error': f'tipo_pg inválido. Use: {tipos_pg_validos}'}), 400
-            
-            categorias_validas = ['moradia', 'alimentacao', 'restaurante_lanche', 'casa_utilidades', 'saude', 'transporte', 'lazer_outros']
-            if data['categoria'] not in categorias_validas:
-                return jsonify({'error': f'categoria inválida. Use: {categorias_validas}'}), 400
-            
-            # Processar data
-            data_compra = data['data_compra']
-            if 'T' in data_compra:
-                data_compra = data_compra.split('T')[0]
-            
-            # Calcular mes_vigente
-            data_obj = datetime.strptime(data_compra, '%Y-%m-%d')
-            mes_vigente = data_obj.strftime('%Y-%m')
-            
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """INSERT INTO despesa 
-                       (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
-                )
-                
-                despesa_id = cursor.fetchone()[0]
-                conn.commit()
-                
-                return jsonify({
-                    'id': despesa_id,
-                    'data_compra': data_compra,
-                    'mes_vigente': mes_vigente,
-                    'descricao': data['descricao'],
-                    'valor': valor,
-                    'tipo_pg': data['tipo_pg'],
-                    'colaborador_id': colaborador_id,
-                    'categoria': data['categoria'],
-                    'message': 'Despesa criada com sucesso'
-                }), 201
-                
-        except Exception as e:
-            logger.error(f"Erro ao criar despesa: {str(e)}")
-            return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+                data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({"error": "Data inválida. Use YYYY-MM-DD."}), 400
 
+            if data.get('valor', 0) <= 0:
+                return jsonify({"error": "Valor deve ser maior que zero."}), 400
+
+            tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
+            colab_id = data['colaborador_id']
+            categoria = data.get('categoria')
+
+            if not categoria or categoria not in CATEGORIAS_VALIDAS:
+                return jsonify({"error": "Categoria inválida ou ausente."}), 400
+
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
+                    colab = cur.fetchone()
+                    if not colab:
+                        return jsonify({"error": "Colaborador não encontrado"}), 400
+
+                    mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
+                    cur.execute("""
+                        INSERT INTO despesa (
+                            data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    """, (data_compra, mes_vigente, data['descricao'], data['valor'], tipo_pg, colab_id, categoria))
+                    conn.commit()
+                    result = cur.fetchone()
+                    return jsonify({"id": result['id'], "mes_vigente": mes_vigente}), 201
+
+    
     # 🔥 ROTAS DE RENDAS - SEM FILTRO POR USUÁRIO
-    @app.route('/api/rendas', methods=['GET'])
+    @app.route('/api/rendas', methods=['GET', 'POST'])
     @jwt_required()
     def listar_rendas():
         try:
@@ -251,39 +223,84 @@ def create_app():
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
     # 🔥 RESUMO - SEM FILTRO POR USUÁRIO
-    @app.route('/api/resumo', methods=['GET'])
+    @app.route('/resumo/<mes_ano>')
     @jwt_required()
-    def obter_resumo():
+    def obter_resumo(mes_ano):
         try:
-            with get_db_connection() as conn:
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                
-                # Total despesas
-                cursor.execute("SELECT COALESCE(SUM(valor), 0) as total_despesas FROM despesa")
-                total_despesas = cursor.fetchone()['total_despesas'] or 0
-                
-                # Total rendas
-                cursor.execute("SELECT COALESCE(SUM(valor), 0) as total_rendas FROM renda_mensal")
-                total_rendas = cursor.fetchone()['total_rendas'] or 0
-                
-                saldo = total_rendas - total_despesas
-                
-                return jsonify({
-                    'total_despesas': float(total_despesas),
-                    'total_rendas': float(total_rendas),
-                    'saldo': float(saldo),
-                    'message': 'Resumo carregado com sucesso'
-                })
-                
-        except Exception as e:
-            logger.error(f"Erro ao buscar resumo: {str(e)}")
-            return jsonify({
-                'total_despesas': 0,
-                'total_rendas': 0,
-                'saldo': 0,
-                'error': 'Erro ao calcular resumo'
-            }), 500
+            if not re.match(r'^\d{4}-\d{2}$', mes_ano):
+                return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
 
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # Total de despesas
+                    cur.execute("SELECT COALESCE(SUM(valor), 0) AS total FROM despesa WHERE mes_vigente = %s", (mes_ano,))
+                    total_despesas = float(cur.fetchone()['total'])
+
+                    # Rendas por colaborador
+                    cur.execute("""
+                        SELECT c.id, c.nome, r.valor
+                        FROM colaborador c
+                        LEFT JOIN renda_mensal r ON c.id = r.colaborador_id AND r.mes_ano = %s
+                        ORDER BY c.id
+                    """, (mes_ano,))
+                    rendas = []
+                    for row in cur.fetchall():
+                        valor = float(row['valor']) if row['valor'] is not None else None
+                        rendas.append({
+                            'id': row['id'],
+                            'nome': row['nome'],
+                            'valor': valor
+                        })
+
+                    # Verificar se todas as rendas estão preenchidas
+                    for r in rendas:
+                        if r['valor'] is None:
+                            return jsonify({"error": f"Renda não registrada para {r['nome']} em {mes_ano}"}), 400
+
+                    total_renda = sum(r['valor'] for r in rendas)
+                    if total_renda == 0:
+                        return jsonify({"error": "Renda total zero"}), 400
+
+                    # Quanto cada um pagou em despesas
+                    pagamentos = {}
+                    for r in rendas:
+                        cur.execute("""
+                            SELECT COALESCE(SUM(valor), 0) AS total
+                            FROM despesa
+                            WHERE colaborador_id = %s AND mes_vigente = %s
+                        """, (r['id'], mes_ano))
+                        pagamentos[r['id']] = float(cur.fetchone()['total'])
+
+                    # Montar resposta
+                    resumo_data = {
+                        "mes": mes_ano,
+                        "total_despesas": round(total_despesas, 2),
+                        "total_renda": round(total_renda, 2),
+                        "colaboradores": []
+                    }
+
+                    for r in rendas:
+                        perc = r['valor'] / total_renda
+                        deve_pagar = total_despesas * perc
+                        pagou = pagamentos[r['id']]
+                        saldo = pagou - deve_pagar
+
+                        resumo_data["colaboradores"].append({
+                            "id": r['id'],
+                            "nome": r['nome'],
+                            "renda": round(r['valor'], 2),
+                            "percentual": round(perc, 4),
+                            "deve_pagar": round(deve_pagar, 2),
+                            "pagou": round(pagou, 2),
+                            "saldo": round(saldo, 2)
+                        })
+
+                    return jsonify(resumo_data)
+
+        except Exception as e:
+            print("❌ Erro no resumo:", str(e))
+            return jsonify({"error": "Erro interno"}), 500
+    
     # 🔐 LOGOUT
     @app.route('/api/logout', methods=['POST'])
     @jwt_required()

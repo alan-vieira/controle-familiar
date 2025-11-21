@@ -51,6 +51,13 @@ def create_app():
     app.register_blueprint(resumo_bp, url_prefix='/api')
     app.register_blueprint(divisao_bp, url_prefix='/api')
 
+    # 🔥 ADICIONE ESTAS LINHAS - CORS para cada blueprint
+    CORS(colaboradores_bp, supports_credentials=True)
+    CORS(despesas_bp, supports_credentials=True)
+    CORS(rendas_bp, supports_credentials=True)
+    CORS(resumo_bp, supports_credentials=True)
+    CORS(divisao_bp, supports_credentials=True)
+
     # --- PROTEGER TODAS AS ROTAS DA API ---
     @app.before_request
     def proteger_rotas_api():

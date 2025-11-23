@@ -544,7 +544,6 @@ def create_app():
                 return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
 
             with get_db_connection() as conn:
-                # ✅ CORREÇÃO: Usar RealDictCursor consistentemente
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 
                 # Total de despesas do mês
@@ -562,21 +561,54 @@ def create_app():
                 
                 rendas = cursor.fetchall()
                 
-                # Processar rendas
+                # Calcular total de rendas
+                total_renda = sum([float(r['valor']) for r in rendas if r['valor']])
+                
+                # Buscar pagamentos já realizados (despesas por colaborador)
+                cursor.execute("""
+                    SELECT colaborador_id, COALESCE(SUM(valor), 0) as total_pago
+                    FROM despesa 
+                    WHERE mes_vigente = %s
+                    GROUP BY colaborador_id
+                """, (mes_ano,))
+                
+                pagamentos_result = cursor.fetchall()
+                pagamentos = {p['colaborador_id']: float(p['total_pago']) for p in pagamentos_result}
+                
+                # Processar cada colaborador com a lógica correta
                 colaboradores_data = []
-                for renda in rendas:
-                    valor_renda = float(renda['valor']) if renda['valor'] else 0.0
+                for r in rendas:
+                    valor_renda = float(r['valor']) if r['valor'] else 0.0
+                    
+                    # Calcular percentual baseado na renda
+                    perc = valor_renda / total_renda if total_renda > 0 else 0
+                    
+                    # Calcular quanto deve pagar
+                    deve_pagar = total_despesas * perc
+                    
+                    # Verificar quanto já pagou
+                    pagou = pagamentos.get(r['id'], 0.0)
+                    
+                    # Calcular saldo
+                    saldo = pagou - deve_pagar
+                    
                     colaboradores_data.append({
-                        "id": renda['id'],
-                        "nome": renda['nome'],
-                        "renda": valor_renda,
-                        "percentual": 0.5  # Placeholder
+                        "id": r['id'],
+                        "nome": r['nome'],
+                        "renda": round(valor_renda, 2),
+                        "percentual": round(perc, 4),  # 4 casas decimais para precisão
+                        "deve_pagar": round(deve_pagar, 2),
+                        "ja_pagou": round(pagou, 2),
+                        "saldo": round(saldo, 2),
+                        "status": "positivo" if saldo >= 0 else "negativo"
                     })
 
                 # Montar resposta
                 resumo_data = {
                     "mes": mes_ano,
                     "total_despesas": round(total_despesas, 2),
+                    "total_rendas": round(total_renda, 2),
+                    "saldo_geral": round(total_renda - total_despesas, 2),
                     "colaboradores": colaboradores_data
                 }
 

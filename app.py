@@ -33,7 +33,6 @@ def normalizar_tipo_pg(tipo: str) -> str:
         return t
     return 'outros'
 
-# Na função calcular_mes_vigente, adicionar tratamento para edge case:
 def calcular_mes_vigente(data_compra, tipo_pg, dia_fechamento):
     """
     Calcula o mês vigente baseado na data de compra, tipo de pagamento e dia de fechamento
@@ -264,36 +263,49 @@ def create_app():
                     conn.commit()
                     return jsonify({"message": "Deletado"})
 
-    # 🔥 ROTAS DE DESPESAS (CORRIGIDAS)
+    # 🔥 ROTAS DE DESPESAS (CORRIGIDAS - VERSÃO FINAL)
     @app.route('/api/despesas', methods=['GET', 'POST'])
     @jwt_required()
     def despesas():
         if request.method == 'GET':
-            mes = request.args.get('mes_vigente')
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
+            try:
+                mes = request.args.get('mes_vigente')
+                with get_db_connection() as conn:
+                    # ✅ CORREÇÃO: Usar RealDictCursor consistentemente
+                    cursor = conn.cursor(cursor_factory=RealDictCursor)
                     if mes:
-                        cur.execute("""
+                        cursor.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
                             WHERE d.mes_vigente = %s
+                            ORDER BY d.data_compra DESC
                         """, (mes,))
                     else:
-                        cur.execute("""
+                        cursor.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
+                            ORDER BY d.data_compra DESC
+                            LIMIT 100
                         """)
-                    rows = []
-                    for r in cur.fetchall():
-                        row = dict(r)
-                        if row.get('data_compra'):
-                            row['data_compra'] = row['data_compra'].strftime('%d/%m/%Y')
-                        rows.append(row)
-                    return jsonify(rows)
+                    
+                    despesas = cursor.fetchall()
+                    
+                    # ✅ Converter datas para formato serializável
+                    for despesa in despesas:
+                        if despesa.get('data_compra'):
+                            despesa['data_compra'] = despesa['data_compra'].strftime('%Y-%m-%d')
+                        if despesa.get('valor'):
+                            despesa['valor'] = float(despesa['valor'])
+                    
+                    return jsonify(despesas)
+                    
+            except Exception as e:
+                logger.error(f"Erro ao buscar despesas: {str(e)}")
+                return jsonify({'error': f'Erro interno ao buscar despesas: {str(e)}'}), 500
         else:
-            # 🔧 POST - Criar despesa (VERSÃO CORRIGIDA)
+            # POST - Criar despesa (manter código que está funcionando)
             data = request.json
             try:
                 data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
@@ -312,7 +324,6 @@ def create_app():
 
             with get_db_connection() as conn:
                 try:
-                    # 🔧 CORREÇÃO: Usar RealDictCursor para SELECT
                     cursor_select = conn.cursor(cursor_factory=RealDictCursor)
                     cursor_select.execute("SELECT id, dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
                     colab = cursor_select.fetchone()
@@ -320,10 +331,8 @@ def create_app():
                     if not colab:
                         return jsonify({"error": "Colaborador não encontrado"}), 400
 
-                    # 🔧 AGORA FUNCIONA: colab é dicionário
                     mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
                     
-                    # Para INSERT, usar cursor comum
                     cursor_insert = conn.cursor()
                     cursor_insert.execute("""
                         INSERT INTO despesa (
@@ -344,13 +353,82 @@ def create_app():
                     logger.error(f"Erro ao criar despesa: {str(e)}")
                     return jsonify({"error": f"Erro interno: {str(e)}"}), 500
 
+    # 🔥 ROTA DE DESPESA POR ID (CORRIGIDA)
+    @app.route('/api/despesas/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+    @jwt_required()
+    def despesa_id(id):
+        if request.method == 'GET':
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor(cursor_factory=RealDictCursor)
+                    cursor.execute("""
+                        SELECT d.*, c.nome AS colaborador_nome
+                        FROM despesa d 
+                        JOIN colaborador c ON d.colaborador_id = c.id
+                        WHERE d.id = %s
+                    """, (id,))
+                    despesa = cursor.fetchone()
+                    
+                    if not despesa:
+                        return jsonify({'error': 'Despesa não encontrada'}), 404
+                    
+                    # Converter formatos
+                    if despesa.get('data_compra'):
+                        despesa['data_compra'] = despesa['data_compra'].strftime('%Y-%m-%d')
+                    if despesa.get('valor'):
+                        despesa['valor'] = float(despesa['valor'])
+                    
+                    return jsonify(despesa)
+                    
+            except Exception as e:
+                logger.error(f"Erro ao buscar despesa {id}: {str(e)}")
+                return jsonify({'error': 'Erro interno do servidor'}), 500
+                
+        elif request.method == 'PUT':
+            data = request.json
+            try:
+                data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({"error": "Data inválida. Use YYYY-MM-DD."}), 400
+
+            if data.get('valor', 0) <= 0:
+                return jsonify({"error": "Valor deve ser maior que zero."}), 400
+
+            tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
+            colab_id = data['colaborador_id']
+            categoria = data.get('categoria')
+
+            if not categoria or categoria not in CATEGORIAS_VALIDAS:
+                return jsonify({"error": "Categoria inválida ou ausente."}), 400
+
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
+                    colab = cur.fetchone()
+                    if not colab:
+                        return jsonify({"error": "Colaborador não encontrado"}), 400
+
+                    mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab[0])  # colab[0] porque é tupla
+                    cur.execute("""
+                        UPDATE despesa
+                        SET data_compra=%s, mes_vigente=%s, descricao=%s, valor=%s, tipo_pg=%s, colaborador_id=%s, categoria=%s
+                        WHERE id=%s
+                    """, (data_compra, mes_vigente, data['descricao'], data['valor'], tipo_pg, colab_id, categoria, id))
+                    conn.commit()
+                    return jsonify({"message": "Atualizado"})
+        else:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM despesa WHERE id=%s", (id,))
+                    conn.commit()
+                    return jsonify({"message": "Deletado"})
+
     # 🔥 ROTAS DE DIVISÃO (CORRIGIDAS)
     @app.route('/api/divisao/<mes_ano>', methods=['GET'])
     @jwt_required()
     def obter_status_divisao(mes_ano):
         try:
             with get_db_connection() as conn:
-                # USAR RealDictCursor para SELECT
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute("SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s", (mes_ano,))
                 row = cursor.fetchone()
@@ -400,48 +478,6 @@ def create_app():
                 conn.commit()
                 return jsonify({"mes_ano": mes_ano, "paga": False}), 200
 
-    @app.route('/api/despesas/<int:id>', methods=['PUT', 'DELETE'])
-    @jwt_required()
-    def despesa_id(id):
-        if request.method == 'PUT':
-            data = request.json
-            try:
-                data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
-            except ValueError:
-                return jsonify({"error": "Data inválida. Use YYYY-MM-DD."}), 400
-
-            if data.get('valor', 0) <= 0:
-                return jsonify({"error": "Valor deve ser maior que zero."}), 400
-
-            tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
-            colab_id = data['colaborador_id']
-            categoria = data.get('categoria')
-
-            if not categoria or categoria not in CATEGORIAS_VALIDAS:
-                return jsonify({"error": "Categoria inválida ou ausente."}), 400
-
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
-                    colab = cur.fetchone()
-                    if not colab:
-                        return jsonify({"error": "Colaborador não encontrado"}), 400
-
-                    mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
-                    cur.execute("""
-                        UPDATE despesa
-                        SET data_compra=%s, mes_vigente=%s, descricao=%s, valor=%s, tipo_pg=%s, colaborador_id=%s, categoria=%s
-                        WHERE id=%s
-                    """, (data_compra, mes_vigente, data['descricao'], data['valor'], tipo_pg, colab_id, categoria, id))
-                    conn.commit()
-                    return jsonify({"message": "Atualizado"})
-        else:
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM despesa WHERE id=%s", (id,))
-                    conn.commit()
-                    return jsonify({"message": "Deletado"})
-
     # 🔥 ROTAS DE RENDAS (CORRIGIDAS)
     @app.route('/api/rendas', methods=['GET', 'POST'])
     @jwt_required()
@@ -450,7 +486,6 @@ def create_app():
             try:
                 mes = request.args.get('mes')
                 with get_db_connection() as conn:
-                    # USAR RealDictCursor para SELECT
                     cursor = conn.cursor(cursor_factory=RealDictCursor)
                     if mes:
                         cursor.execute("""
@@ -480,7 +515,7 @@ def create_app():
                 logger.error(f"Erro ao buscar rendas: {str(e)}")
                 return jsonify({'error': f'Erro interno: {str(e)}'}), 500
         else:
-            # POST - Criar renda (manter cursor comum para escrita)
+            # POST - Criar renda
             data = request.json
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -614,4 +649,3 @@ if __name__ == '__main__':
     app = create_app()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-    

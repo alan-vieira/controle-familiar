@@ -320,7 +320,7 @@ def create_app():
                     result = cur.fetchone()
                     return jsonify({"id": result['id'], "mes_vigente": mes_vigente}), 201
 
-    @app.route('api/divisao/<mes_ano>', methods=['GET'])
+    @app.route('/api/divisao/<mes_ano>', methods=['GET'])
     @jwt_required()
     def obter_status_divisao(mes_ano):
         with get_db_connection() as conn:
@@ -336,7 +336,7 @@ def create_app():
                 else:
                     return jsonify({"mes_ano": mes_ano, "paga": False, "data_acerto": None})
 
-    @app.route('api/divisao/<mes_ano>/marcar-pago', methods=['POST'])
+    @app.route('/api/divisao/<mes_ano>/marcar-pago', methods=['POST'])
     @jwt_required()
     def marcar_divisao_como_paga(mes_ano):
         data_acerto = request.json.get('data_acerto')
@@ -357,7 +357,7 @@ def create_app():
                 conn.commit()
                 return jsonify({"mes_ano": mes_ano, "paga": True, "data_acerto": data_acerto}), 200
 
-    @app.route('api/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
+    @app.route('/api/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
     @jwt_required()
     def desmarcar_divisao_como_paga(mes_ano):
         with get_db_connection() as conn:
@@ -369,7 +369,7 @@ def create_app():
                 conn.commit()
                 return jsonify({"mes_ano": mes_ano, "paga": False}), 200
 
-    @app.route('api/despesas/<int:id>', methods=['PUT', 'DELETE'])
+    @app.route('/api/despesas/<int:id>', methods=['PUT', 'DELETE'])
     @jwt_required()
     def despesa_id(id):
         if request.method == 'PUT':
@@ -446,7 +446,7 @@ def create_app():
                     conn.commit()
                     return jsonify({"id": cur.fetchone()['id']}), 201
 
-    @app.route('api/rendas/<int:id>', methods=['PUT', 'DELETE'])
+    @app.route('/api/rendas/<int:id>', methods=['PUT', 'DELETE'])
     @jwt_required()
     def renda_id(id):
         if request.method == 'PUT':

@@ -258,35 +258,48 @@ def create_app():
                     conn.commit()
                     return jsonify({"message": "Deletado"})
 
-    # 🔥 ROTAS DE DESPESAS
+    # 🔥 ROTAS DE DESPESAS (CORRIGIDAS)
     @app.route('/api/despesas', methods=['GET', 'POST'])
     @jwt_required()
     def despesas():
         if request.method == 'GET':
-            mes = request.args.get('mes_vigente')
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
+            try:
+                mes = request.args.get('mes_vigente')
+                with get_db_connection() as conn:
+                    # USAR RealDictCursor para SELECT
+                    cursor = conn.cursor(cursor_factory=RealDictCursor)
                     if mes:
-                        cur.execute("""
+                        cursor.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
                             WHERE d.mes_vigente = %s
+                            ORDER BY d.data_compra DESC
                         """, (mes,))
                     else:
-                        cur.execute("""
+                        cursor.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
+                            ORDER BY d.data_compra DESC
+                            LIMIT 100
                         """)
-                    rows = []
-                    for r in cur.fetchall():
-                        row = dict(r)
-                        if row.get('data_compra'):
-                            row['data_compra'] = row['data_compra'].strftime('%d/%m/%Y')
-                        rows.append(row)
-                    return jsonify(rows)
+                    
+                    despesas = cursor.fetchall()
+                    
+                    # Converter para JSON
+                    for despesa in despesas:
+                        if despesa.get('data_compra'):
+                            despesa['data_compra'] = despesa['data_compra'].isoformat()
+                        if despesa.get('valor'):
+                            despesa['valor'] = float(despesa['valor'])
+                    
+                    return jsonify(despesas)
+            except Exception as e:
+                logger.error(f"Erro ao buscar despesas: {str(e)}")
+                return jsonify({'error': f'Erro interno: {str(e)}'}), 500
         else:
+            # POST - Criar despesa (manter cursor comum para escrita)
             data = request.json
             try:
                 data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
@@ -318,15 +331,19 @@ def create_app():
                     """, (data_compra, mes_vigente, data['descricao'], data['valor'], tipo_pg, colab_id, categoria))
                     conn.commit()
                     result = cur.fetchone()
-                    return jsonify({"id": result['id'], "mes_vigente": mes_vigente}), 201
+                    return jsonify({"id": result[0], "mes_vigente": mes_vigente}), 201
 
+    # 🔥 ROTAS DE DIVISÃO (CORRIGIDAS)
     @app.route('/api/divisao/<mes_ano>', methods=['GET'])
     @jwt_required()
     def obter_status_divisao(mes_ano):
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s", (mes_ano,))
-                row = cur.fetchone()
+        try:
+            with get_db_connection() as conn:
+                # USAR RealDictCursor para SELECT
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s", (mes_ano,))
+                row = cursor.fetchone()
+                
                 if row:
                     return jsonify({
                         "mes_ano": mes_ano,
@@ -335,6 +352,9 @@ def create_app():
                     })
                 else:
                     return jsonify({"mes_ano": mes_ano, "paga": False, "data_acerto": None})
+        except Exception as e:
+            logger.error(f"Erro ao buscar divisão: {str(e)}")
+            return jsonify({"error": "Erro interno do servidor"}), 500
 
     @app.route('/api/divisao/<mes_ano>/marcar-pago', methods=['POST'])
     @jwt_required()
@@ -342,7 +362,7 @@ def create_app():
         data_acerto = request.json.get('data_acerto')
         if data_acerto:
             try:
-                date.fromisoformat(data_acerto)
+                datetime.strptime(data_acerto, '%Y-%m-%d').date()
             except ValueError:
                 return jsonify({"error": "data_acerto deve estar no formato YYYY-MM-DD"}), 400
 
@@ -411,28 +431,45 @@ def create_app():
                     conn.commit()
                     return jsonify({"message": "Deletado"})
 
-    # 🔥 ROTAS DE RENDAS
+    # 🔥 ROTAS DE RENDAS (CORRIGIDAS)
     @app.route('/api/rendas', methods=['GET', 'POST'])
     @jwt_required()
     def rendas():
         if request.method == 'GET':
-            mes = request.args.get('mes')
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
+            try:
+                mes = request.args.get('mes')
+                with get_db_connection() as conn:
+                    # USAR RealDictCursor para SELECT
+                    cursor = conn.cursor(cursor_factory=RealDictCursor)
                     if mes:
-                        cur.execute("""
-                            SELECT rm.*, c.nome FROM renda_mensal rm
+                        cursor.execute("""
+                            SELECT rm.*, c.nome as colaborador_nome
+                            FROM renda_mensal rm
                             JOIN colaborador c ON rm.colaborador_id = c.id
                             WHERE rm.mes_ano = %s
+                            ORDER BY rm.mes_ano DESC
                         """, (mes,))
                     else:
-                        cur.execute("""
-                            SELECT rm.*, c.nome FROM renda_mensal rm
+                        cursor.execute("""
+                            SELECT rm.*, c.nome as colaborador_nome
+                            FROM renda_mensal rm
                             JOIN colaborador c ON rm.colaborador_id = c.id
+                            ORDER BY rm.mes_ano DESC
+                            LIMIT 50
                         """)
-                    rendas = [dict(r) for r in cur.fetchall()]
-                    return jsonify({"rendas": rendas})
+                    
+                    rendas = cursor.fetchall()
+                    
+                    for renda in rendas:
+                        if renda.get('valor'):
+                            renda['valor'] = float(renda['valor'])
+                    
+                    return jsonify(rendas)
+            except Exception as e:
+                logger.error(f"Erro ao buscar rendas: {str(e)}")
+                return jsonify({'error': f'Erro interno: {str(e)}'}), 500
         else:
+            # POST - Criar renda (manter cursor comum para escrita)
             data = request.json
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -444,7 +481,7 @@ def create_app():
                         RETURNING id
                     """, (data['colaborador_id'], data['mes_ano'], data['valor']))
                     conn.commit()
-                    return jsonify({"id": cur.fetchone()['id']}), 201
+                    return jsonify({"id": cur.fetchone()[0]}), 201
 
     @app.route('/api/rendas/<int:id>', methods=['PUT', 'DELETE'])
     @jwt_required()

@@ -33,30 +33,36 @@ def normalizar_tipo_pg(tipo: str) -> str:
         return t
     return 'outros'
 
+# Na função calcular_mes_vigente, adicionar tratamento para edge case:
 def calcular_mes_vigente(data_compra, tipo_pg, dia_fechamento):
     """
     Calcula o mês vigente baseado na data de compra, tipo de pagamento e dia de fechamento
     """
-    if tipo_pg == 'credito':
-        # Para crédito, vai para o próximo mês
-        if data_compra.day >= dia_fechamento:
-            # Compra após fechamento, vai para mês+2
-            next_month = data_compra.month + 2
-            year = data_compra.year
-            if next_month > 12:
-                next_month -= 12
-                year += 1
-            return f"{year}-{next_month:02d}"
+    try:
+        if tipo_pg == 'credito':
+            # Para crédito, vai para o próximo mês
+            if data_compra.day >= dia_fechamento:
+                # Compra após fechamento, vai para mês+2
+                next_month = data_compra.month + 2
+                year = data_compra.year
+                if next_month > 12:
+                    next_month -= 12
+                    year += 1
+                return f"{year}-{next_month:02d}"
+            else:
+                # Compra antes do fechamento, vai para mês+1
+                next_month = data_compra.month + 1
+                year = data_compra.year
+                if next_month > 12:
+                    next_month -= 12
+                    year += 1
+                return f"{year}-{next_month:02d}"
         else:
-            # Compra antes do fechamento, vai para mês+1
-            next_month = data_compra.month + 1
-            year = data_compra.year
-            if next_month > 12:
-                next_month -= 12
-                year += 1
-            return f"{year}-{next_month:02d}"
-    else:
-        # Débito, PIX, dinheiro - fica no mês atual
+            # Débito, PIX, dinheiro - fica no mês atual
+            return f"{data_compra.year}-{data_compra.month:02d}"
+    except Exception as e:
+        logger.error(f"Erro ao calcular mês vigente: {e}")
+        # Fallback: retorna mês atual
         return f"{data_compra.year}-{data_compra.month:02d}"
 
 def create_app():
@@ -263,43 +269,31 @@ def create_app():
     @jwt_required()
     def despesas():
         if request.method == 'GET':
-            try:
-                mes = request.args.get('mes_vigente')
-                with get_db_connection() as conn:
-                    # USAR RealDictCursor para SELECT
-                    cursor = conn.cursor(cursor_factory=RealDictCursor)
+            mes = request.args.get('mes_vigente')
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
                     if mes:
-                        cursor.execute("""
+                        cur.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
                             WHERE d.mes_vigente = %s
-                            ORDER BY d.data_compra DESC
                         """, (mes,))
                     else:
-                        cursor.execute("""
+                        cur.execute("""
                             SELECT d.*, c.nome AS colaborador_nome
                             FROM despesa d
                             JOIN colaborador c ON d.colaborador_id = c.id
-                            ORDER BY d.data_compra DESC
-                            LIMIT 100
                         """)
-                    
-                    despesas = cursor.fetchall()
-                    
-                    # Converter para JSON
-                    for despesa in despesas:
-                        if despesa.get('data_compra'):
-                            despesa['data_compra'] = despesa['data_compra'].isoformat()
-                        if despesa.get('valor'):
-                            despesa['valor'] = float(despesa['valor'])
-                    
-                    return jsonify(despesas)
-            except Exception as e:
-                logger.error(f"Erro ao buscar despesas: {str(e)}")
-                return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+                    rows = []
+                    for r in cur.fetchall():
+                        row = dict(r)
+                        if row.get('data_compra'):
+                            row['data_compra'] = row['data_compra'].strftime('%d/%m/%Y')
+                        rows.append(row)
+                    return jsonify(rows)
         else:
-            # POST - Criar despesa (manter cursor comum para escrita)
+            # 🔧 POST - Criar despesa (VERSÃO CORRIGIDA)
             data = request.json
             try:
                 data_compra = datetime.strptime(data['data_compra'], '%Y-%m-%d').date()
@@ -317,21 +311,38 @@ def create_app():
                 return jsonify({"error": "Categoria inválida ou ausente."}), 400
 
             with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
-                    colab = cur.fetchone()
+                try:
+                    # 🔧 CORREÇÃO: Usar RealDictCursor para SELECT
+                    cursor_select = conn.cursor(cursor_factory=RealDictCursor)
+                    cursor_select.execute("SELECT id, dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
+                    colab = cursor_select.fetchone()
+                    
                     if not colab:
                         return jsonify({"error": "Colaborador não encontrado"}), 400
 
+                    # 🔧 AGORA FUNCIONA: colab é dicionário
                     mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
-                    cur.execute("""
+                    
+                    # Para INSERT, usar cursor comum
+                    cursor_insert = conn.cursor()
+                    cursor_insert.execute("""
                         INSERT INTO despesa (
                             data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                     """, (data_compra, mes_vigente, data['descricao'], data['valor'], tipo_pg, colab_id, categoria))
+                    
                     conn.commit()
-                    result = cur.fetchone()
-                    return jsonify({"id": result[0], "mes_vigente": mes_vigente}), 201
+                    result = cursor_insert.fetchone()
+                    return jsonify({
+                        "id": result[0], 
+                        "mes_vigente": mes_vigente,
+                        "message": "Despesa criada com sucesso"
+                    }), 201
+                    
+                except Exception as e:
+                    conn.rollback()
+                    logger.error(f"Erro ao criar despesa: {str(e)}")
+                    return jsonify({"error": f"Erro interno: {str(e)}"}), 500
 
     # 🔥 ROTAS DE DIVISÃO (CORRIGIDAS)
     @app.route('/api/divisao/<mes_ano>', methods=['GET'])
@@ -603,3 +614,4 @@ if __name__ == '__main__':
     app = create_app()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+    

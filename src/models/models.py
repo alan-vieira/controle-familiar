@@ -1,6 +1,6 @@
 import bcrypt
 from flask_login import UserMixin
-from database import get_db_connection
+from src.models.database import get_db_connection
 from werkzeug.security import check_password_hash
 
 class Usuario(UserMixin):

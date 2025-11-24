@@ -1,26 +1,23 @@
 from flask import Blueprint, request, jsonify
-from flask_login import login_required
-from database import get_db_connection
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from src.models.connection import get_db_connection
 import logging
+from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger(__name__)
 
 colaboradores_bp = Blueprint('colaboradores', __name__)
 
 @colaboradores_bp.route('/api/colaboradores', methods=['GET'])
-@login_required
+@jwt_required()
 def listar_colaboradores():
     try:
         logger.info("GET /api/colaboradores - Iniciando")
         
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)  # Retorna dicionários
-        
-        cursor.execute("SELECT * FROM colaborador ORDER BY nome")
-        colaboradores = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)  # Retorna dicionários
+            cursor.execute("SELECT * FROM colaborador ORDER BY nome")
+            colaboradores = cursor.fetchall()
         
         logger.info(f"GET /api/colaboradores - Encontrados {len(colaboradores)} registros")
         return jsonify(colaboradores)
@@ -30,7 +27,7 @@ def listar_colaboradores():
         return jsonify({'error': 'Erro ao buscar colaboradores'}), 500
 
 @colaboradores_bp.route('/api/colaboradores', methods=['POST'])
-@login_required
+@jwt_required()
 def criar_colaborador():
     try:
         data = request.get_json()
@@ -54,19 +51,16 @@ def criar_colaborador():
             return jsonify({'error': 'dia_fechamento deve ser um número'}), 400
         
         # Inserir no banco
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s)",
-            (data['nome'], dia)
-        )
-        
-        conn.commit()
-        colaborador_id = cursor.lastrowid
-        
-        cursor.close()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s)",
+                (data['nome'], dia)
+            )
+            
+            conn.commit()
+            colaborador_id = cursor.lastrowid
         
         response_data = {
             'id': colaborador_id,

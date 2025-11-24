@@ -17,7 +17,7 @@ def login():
         return '', 200
 
     data = request.get_json()
-    if not 
+    if not data:
         return jsonify({'error': 'Dados não fornecidos'}), 400
 
     username = data.get('username')

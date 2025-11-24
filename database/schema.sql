@@ -61,11 +61,3 @@ CREATE INDEX IF NOT EXISTS idx_despesa_categoria ON despesa(categoria);
 CREATE INDEX IF NOT EXISTS idx_renda_mes_ano ON renda_mensal(mes_ano);
 CREATE INDEX IF NOT EXISTS idx_usuario_username ON usuario(username);
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
-
--- 7. Inserir usuário admin inicial (senha: admin123)
-INSERT INTO usuario (username, email, password_hash) VALUES (
-    'admin', 
-    'admin@familia.com', 
-    -- Senha: admin123 (hash gerado com werkzeug.security.generate_password_hash)
-    'scrypt:32768:8:1$Dvg3OZq7Q7qgV9nL$5f1a6c6e7c8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2'
-) ON CONFLICT (username) DO NOTHING;

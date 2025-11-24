@@ -1,29 +1,32 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from src.models.connection import get_db_connection
+from flask_login import login_required, current_user
+from database import get_db_connection
 from datetime import datetime
 import logging
-from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger(__name__)
 
 despesas_bp = Blueprint('despesas', __name__)
 
 @despesas_bp.route('/api/despesas', methods=['GET'])
-@jwt_required()
+@login_required
 def despesas():
     try:
         logger.info("GET /api/despesas - Iniciando")
         
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=RealDictCursor)  # Isso retorna dicionários
-            cursor.execute("""
-                SELECT d.*, c.nome as colaborador_nome 
-                FROM despesa d 
-                JOIN colaborador c ON d.colaborador_id = c.id 
-                ORDER BY d.data_compra DESC
-            """)
-            despesas = cursor.fetchall()
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)  # Isso retorna dicionários
+        
+        cursor.execute("""
+            SELECT d.*, c.nome as colaborador_nome 
+            FROM despesa d 
+            JOIN colaborador c ON d.colaborador_id = c.id 
+            ORDER BY d.data_compra DESC
+        """)
+        despesas = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
         
         # Já são dicionários, só precisamos converter datas e decimais
         for despesa in despesas:
@@ -40,7 +43,7 @@ def despesas():
         return jsonify({'error': 'Erro ao buscar despesas'}), 500
 
 @despesas_bp.route('/api/despesas', methods=['POST'])
-@jwt_required()
+@login_required
 def criar_despesa():
     try:
         data = request.get_json()
@@ -85,18 +88,21 @@ def criar_despesa():
         mes_vigente = data_obj.strftime('%Y-%m')
         
         # Inserir no banco
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                """INSERT INTO despesa 
-                   (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
-            )
-            
-            conn.commit()
-            despesa_id = cursor.lastrowid
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """INSERT INTO despesa 
+               (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
+        )
+        
+        conn.commit()
+        despesa_id = cursor.lastrowid
+        
+        cursor.close()
+        conn.close()
         
         response_data = {
             'id': despesa_id,

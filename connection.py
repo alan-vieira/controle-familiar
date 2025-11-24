@@ -1,7 +1,7 @@
 # connection.py
 import psycopg2
 from contextlib import contextmanager
-from src.config.config import DATABASE_URL # Importar a string de conexão consolidada
+from config import DATABASE_URL # Importar a string de conexão consolidada
 
 @contextmanager
 def get_db_connection():

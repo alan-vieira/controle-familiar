@@ -1,34 +1,29 @@
-# blueprints/divisao.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
+from flask_login import login_required
 from connection import get_db_connection
-from psycopg2.extras import RealDictCursor
 from datetime import date
 import re
-import logging
-
-logger = logging.getLogger(__name__)
 
 divisao_bp = Blueprint('divisao', __name__)
 
 def validar_mes_ano(mes_ano):
-    return bool(re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano))
+    """Valida se o formato do mês_ano é YYYY-MM"""
+    if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
+        return False
+    return True
 
 @divisao_bp.route('/divisao/<mes_ano>', methods=['GET'])
-@jwt_required()
+@login_required
 def obter_status_divisao(mes_ano):
-    if not validar_mes_ano(mes_ano):
-        return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
-
     try:
+        # Validar formato do mês_ano
+        if not validar_mes_ano(mes_ano):
+            return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
+        
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s",
-                    (mes_ano,)
-                )
+            with conn.cursor() as cur:
+                cur.execute("SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s", (mes_ano,))
                 row = cur.fetchone()
-
                 if row:
                     return jsonify({
                         "mes_ano": mes_ano,
@@ -36,33 +31,38 @@ def obter_status_divisao(mes_ano):
                         "data_acerto": row['data_acerto'].isoformat() if row['data_acerto'] else None
                     })
                 else:
+                    # Retornar status padrão para mês não registrado
                     return jsonify({
-                        "mes_ano": mes_ano,
-                        "paga": False,
-                        "data_acerto": None
+                        "mes_ano": mes_ano, 
+                        "paga": False, 
+                        "data_acerto": None,
+                        "message": "Mês não registrado na divisão"
                     })
+    
     except Exception as e:
-        logger.error(f"Erro em obter_status_divisao: {e}")
-        return jsonify({"error": "Erro interno ao buscar status da divisão"}), 500
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/marcar-pago', methods=['POST'])
-@jwt_required()
+@login_required
 def marcar_divisao_como_paga(mes_ano):
-    if not validar_mes_ano(mes_ano):
-        return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
-
-    data = request.get_json() or {}
-    data_acerto = data.get('data_acerto')
-
-    if data_acerto:
-        try:
-            date.fromisoformat(data_acerto)
-        except ValueError:
-            return jsonify({"error": "data_acerto deve estar no formato YYYY-MM-DD"}), 400
-
     try:
+        # Validar formato do mês_ano
+        if not validar_mes_ano(mes_ano):
+            return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
+        
+        data = request.get_json() or {}
+        data_acerto = data.get('data_acerto')
+        
+        # Validar data_acerto se for fornecida
+        if data_acerto:
+            try:
+                # Validar formato YYYY-MM-DD
+                date.fromisoformat(data_acerto)
+            except ValueError:
+                return jsonify({"error": "data_acerto deve estar no formato YYYY-MM-DD"}), 400
+        
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO divisao_mensal (mes_ano, paga, data_acerto)
                     VALUES (%s, true, %s)
@@ -70,49 +70,57 @@ def marcar_divisao_como_paga(mes_ano):
                     DO UPDATE SET paga = true, data_acerto = EXCLUDED.data_acerto
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano, data_acerto))
+                
                 conn.commit()
                 result = cur.fetchone()
-
+                
                 return jsonify({
                     "mes_ano": result['mes_ano'],
                     "paga": result['paga'],
-                    "data_acerto": result['data_acerto'].isoformat() if result['data_acerto'] else None
+                    "data_acerto": result['data_acerto'].isoformat() if result['data_acerto'] else None,
+                    "message": "Divisão marcada como paga"
                 }), 200
+    
     except Exception as e:
-        logger.error(f"Erro ao marcar divisão como paga: {e}")
-        return jsonify({"error": "Erro interno ao atualizar divisão"}), 500
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
-@jwt_required()
+@login_required
 def desmarcar_divisao_como_paga(mes_ano):
-    if not validar_mes_ano(mes_ano):
-        return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
-
     try:
+        # Validar formato do mês_ano
+        if not validar_mes_ano(mes_ano):
+            return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
+        
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE divisao_mensal 
                     SET paga = false, data_acerto = NULL 
                     WHERE mes_ano = %s
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano,))
+                
                 conn.commit()
-
+                
+                # Verificar se algum registro foi atualizado
                 if cur.rowcount == 0:
+                    # Se não existia registro, criar um com paga = false
                     cur.execute("""
-                        INSERT INTO divisao_mensal (mes_ano, paga)
+                        INSERT INTO divisao_mensal (mes_ano, paga) 
                         VALUES (%s, false)
                         RETURNING mes_ano, paga, data_acerto
                     """, (mes_ano,))
                     conn.commit()
-
+                
                 result = cur.fetchone()
+                
                 return jsonify({
                     "mes_ano": result['mes_ano'],
                     "paga": result['paga'],
-                    "data_acerto": result['data_acerto']
+                    "data_acerto": result['data_acerto'],
+                    "message": "Divisão desmarcada como paga"
                 }), 200
+    
     except Exception as e:
-        logger.error(f"Erro ao desmarcar divisão como paga: {e}")
-        return jsonify({"error": "Erro interno ao atualizar divisão"}), 500
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500

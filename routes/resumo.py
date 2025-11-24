@@ -1,32 +1,28 @@
-# blueprints/resumo.py
-from flask import Blueprint, jsonify
-from flask_jwt_extended import jwt_required
-from connection import get_db_connection
-from psycopg2.extras import RealDictCursor
 import re
-import logging
-
-logger = logging.getLogger(__name__)
+from flask import Blueprint, jsonify
+from flask_login import login_required
+from connection import get_db_connection
 
 resumo_bp = Blueprint('resumo', __name__)
 
 @resumo_bp.route('/resumo/<mes_ano>')
-@jwt_required()
+@login_required
 def resumo(mes_ano):
-    # Validar formato do mês
-    if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
-        return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
-
     try:
+        # Validar formato do mês
+        if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
+            return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
+
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # 1. Verificar colaboradores
+            with conn.cursor() as cur:
+                # 1. Verificar se existem colaboradores
                 cur.execute("SELECT COUNT(*) as total FROM colaborador")
                 total_colabs = cur.fetchone()['total']
+                
                 if total_colabs == 0:
                     return jsonify({"error": "Nenhum colaborador cadastrado"}), 400
 
-                # 2. Total de despesas
+                # 2. Total de despesas do mês
                 cur.execute("""
                     SELECT COALESCE(SUM(valor), 0) AS total 
                     FROM despesa 
@@ -41,21 +37,40 @@ def resumo(mes_ano):
                     LEFT JOIN renda_mensal r ON c.id = r.colaborador_id AND r.mes_ano = %s
                     ORDER BY c.nome
                 """, (mes_ano,))
-                rendas = cur.fetchall()
+                
+                rendas = []
+                colaboradores_sem_renda = []
+                
+                for row in cur.fetchall():
+                    valor = float(row['valor']) if row['valor'] is not None else None
+                    colaborador = {
+                        'id': row['id'],
+                        'nome': row['nome'],
+                        'valor': valor
+                    }
+                    rendas.append(colaborador)
+                    
+                    if valor is None:
+                        colaboradores_sem_renda.append(row['nome'])
 
-                # Verificar rendas faltantes
-                colaboradores_sem_renda = [r['nome'] for r in rendas if r['valor'] is None]
+                # 4. Verificar se todas as rendas estão preenchidas
                 if colaboradores_sem_renda:
                     return jsonify({
                         "error": f"Rendas não registradas para: {', '.join(colaboradores_sem_renda)}",
                         "colaboradores_sem_renda": colaboradores_sem_renda
                     }), 400
 
-                total_renda = sum(float(r['valor']) for r in rendas)
+                total_renda = sum(r['valor'] for r in rendas)
+                
+                # 5. Verificar se há renda total
                 if total_renda == 0:
-                    return jsonify({"error": "Renda total zero para o mês"}), 400
+                    return jsonify({
+                        "error": "Renda total zero para o mês",
+                        "mes": mes_ano,
+                        "total_colaboradores": len(rendas)
+                    }), 400
 
-                # 4. Pagamentos por colaborador
+                # 6. Calcular quanto cada um pagou em despesas
                 pagamentos = {}
                 for r in rendas:
                     cur.execute("""
@@ -65,37 +80,39 @@ def resumo(mes_ano):
                     """, (r['id'], mes_ano))
                     pagamentos[r['id']] = float(cur.fetchone()['total'])
 
-                # 5. Montar resposta
-                colaboradores = []
+                # 7. Montar resposta detalhada
+                resumo_data = {
+                    "mes": mes_ano,
+                    "total_despesas": round(total_despesas, 2),
+                    "total_renda": round(total_renda, 2),
+                    "saldo_total": round(total_renda - total_despesas, 2),
+                    "total_colaboradores": len(rendas),
+                    "colaboradores": []
+                }
+
+                # 8. Calcular valores por colaborador
                 for r in rendas:
-                    valor_renda = float(r['valor'])
-                    perc = valor_renda / total_renda
+                    perc = r['valor'] / total_renda
                     deve_pagar = total_despesas * perc
                     pagou = pagamentos[r['id']]
                     saldo = pagou - deve_pagar
 
-                    colaboradores.append({
+                    resumo_data["colaboradores"].append({
                         "id": r['id'],
                         "nome": r['nome'],
-                        "renda": round(valor_renda, 2),
-                        "percentual": round(perc * 100, 2),
+                        "renda": round(r['valor'], 2),
+                        "percentual": round(perc * 100, 2),  # Em porcentagem
                         "deve_pagar": round(deve_pagar, 2),
                         "pagou": round(pagou, 2),
                         "saldo": round(saldo, 2),
                         "status": "positivo" if saldo >= 0 else "negativo"
                     })
 
-                colaboradores.sort(key=lambda x: x['saldo'], reverse=True)
+                # 9. Ordenar colaboradores por saldo (maior para menor)
+                resumo_data["colaboradores"].sort(key=lambda x: x['saldo'], reverse=True)
 
-                return jsonify({
-                    "mes": mes_ano,
-                    "total_despesas": round(total_despesas, 2),
-                    "total_renda": round(total_renda, 2),
-                    "saldo_total": round(total_renda - total_despesas, 2),
-                    "total_colaboradores": len(colaboradores),
-                    "colaboradores": colaboradores
-                })
+                return jsonify(resumo_data)
 
     except Exception as e:
-        logger.error(f"Erro ao gerar resumo para {mes_ano}: {e}")
+        print(f"❌ Erro no resumo para {mes_ano}: {str(e)}")
         return jsonify({"error": "Erro interno no cálculo do resumo"}), 500

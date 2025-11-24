@@ -2,9 +2,19 @@
 import os
 from flask import Flask, jsonify
 from flask_cors import CORS
+<<<<<<< HEAD:app.py
 from flask_jwt_extended import JWTManager
 from config import SECRET_KEY
 from datetime import timedelta
+=======
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from datetime import datetime, timedelta
+import logging
+from src.models.connection import get_db_connection
+from src.config.config import SECRET_KEY
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import check_password_hash
+>>>>>>> 96d840c9ff079f97be4fef6024b42cde3b5975b9:src/app.py
 
 # Importe seus blueprints
 from blueprints.auth import auth_bp

@@ -1,16 +1,23 @@
 # blueprints/despesas.py
 from flask import Blueprint, request, jsonify
+<<<<<<< HEAD:routes/despesas.py
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
+=======
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from src.models.connection import get_db_connection
+>>>>>>> 96d840c9ff079f97be4fef6024b42cde3b5975b9:src/api/routes/despesas.py
 from datetime import datetime
 import logging
+from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger(__name__)
 
 despesas_bp = Blueprint('despesas', __name__)
 
+<<<<<<< HEAD:routes/despesas.py
 CATEGORIAS_VALIDAS = {
     'moradia', 'alimentacao', 'restaurante_lanche',
     'casa_utilidades', 'saude', 'transporte', 'lazer_outros'
@@ -62,6 +69,31 @@ def listar_despesas():
             if d.get('valor'):
                 d['valor'] = float(d['valor'])
 
+=======
+@despesas_bp.route('/api/despesas', methods=['GET'])
+@jwt_required()
+def despesas():
+    try:
+        logger.info("GET /api/despesas - Iniciando")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)  # Isso retorna dicionários
+            cursor.execute("""
+                SELECT d.*, c.nome as colaborador_nome 
+                FROM despesa d 
+                JOIN colaborador c ON d.colaborador_id = c.id 
+                ORDER BY d.data_compra DESC
+            """)
+            despesas = cursor.fetchall()
+        
+        # Já são dicionários, só precisamos converter datas e decimais
+        for despesa in despesas:
+            if despesa.get('data_compra'):
+                despesa['data_compra'] = despesa['data_compra'].isoformat()
+            if despesa.get('valor'):
+                despesa['valor'] = float(despesa['valor'])
+        
+>>>>>>> 96d840c9ff079f97be4fef6024b42cde3b5975b9:src/api/routes/despesas.py
         logger.info(f"GET /api/despesas - Encontrados {len(despesas)} registros")
         return jsonify(despesas)
 
@@ -69,7 +101,11 @@ def listar_despesas():
         logger.error(f"ERRO GET /api/despesas: {str(e)}", exc_info=True)
         return jsonify({'error': 'Erro ao buscar despesas'}), 500
 
+<<<<<<< HEAD:routes/despesas.py
 @despesas_bp.route('/despesas', methods=['POST'])
+=======
+@despesas_bp.route('/api/despesas', methods=['POST'])
+>>>>>>> 96d840c9ff079f97be4fef6024b42cde3b5975b9:src/api/routes/despesas.py
 @jwt_required()
 def criar_despesa():
     try:
@@ -88,6 +124,7 @@ def criar_despesa():
             valor = float(data['valor'])
             colab_id = int(data['colaborador_id'])
         except (ValueError, TypeError):
+<<<<<<< HEAD:routes/despesas.py
             return jsonify({'error': 'Dados inválidos'}), 400
 
         tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
@@ -118,6 +155,46 @@ def criar_despesa():
                 conn.commit()
 
         return jsonify({
+=======
+            return jsonify({'error': 'valor ou colaborador_id inválidos'}), 400
+        
+        # Tipos de pagamento válidos
+        tipos_pg_validos = ['credito', 'debito', 'pix', 'dinheiro', 'outros']
+        if data['tipo_pg'] not in tipos_pg_validos:
+            return jsonify({'error': f'tipo_pg inválido. Use: {tipos_pg_validos}'}), 400
+        
+        # Categorias válidas
+        categorias_validas = [
+            'moradia', 'alimentacao', 'restaurante_lanche', 
+            'casa_utilidades', 'saude', 'transporte', 'lazer_outros'
+        ]
+        if data['categoria'] not in categorias_validas:
+            return jsonify({'error': f'categoria inválida. Use: {categorias_validas}'}), 400
+        
+        # Processar data e calcular mes_vigente
+        data_compra = data['data_compra']
+        if 'T' in data_compra:
+            data_compra = data_compra.split('T')[0]
+        
+        data_obj = datetime.strptime(data_compra, '%Y-%m-%d')
+        mes_vigente = data_obj.strftime('%Y-%m')
+        
+        # Inserir no banco
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """INSERT INTO despesa 
+                   (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
+            )
+            
+            conn.commit()
+            despesa_id = cursor.lastrowid
+        
+        response_data = {
+>>>>>>> 96d840c9ff079f97be4fef6024b42cde3b5975b9:src/api/routes/despesas.py
             'id': despesa_id,
             'mes_vigente': mes_vigente,
             'message': 'Despesa criada com sucesso'

@@ -29,7 +29,7 @@ def listar_colaboradores():
 def criar_colaborador():
     try:
         data = request.get_json()
-        if not 
+        if not data:
             return jsonify({'error': 'Dados JSON inválidos'}), 400
 
         nome = data.get('nome')

@@ -74,7 +74,7 @@ def listar_despesas():
 def criar_despesa():
     try:
         data = request.get_json()
-        if not 
+        if not data:
             return jsonify({'error': 'Dados JSON inválidos'}), 400
 
         # Validação

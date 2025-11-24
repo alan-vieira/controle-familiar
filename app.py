@@ -6,13 +6,13 @@ from flask_jwt_extended import JWTManager
 from config import SECRET_KEY
 from datetime import timedelta
 
-# Importe seus blueprints
-from blueprints.auth import auth_bp
-from blueprints.colaboradores import colaboradores_bp
-from blueprints.despesas import despesas_bp
-from blueprints.rendas import rendas_bp
-from blueprints.divisao import divisao_bp
-from blueprints.resumo import resumo_bp
+# Importe seus routes
+from routes.auth import auth_bp
+from routes.colaboradores import colaboradores_bp
+from routes.despesas import despesas_bp
+from routes.rendas import rendas_bp
+from routes.divisao import divisao_bp
+from routes.resumo import resumo_bp
 
 def create_app():
     app = Flask(__name__)
@@ -39,7 +39,7 @@ def create_app():
     def health():
         return jsonify({'status': 'OK'})
 
-    # Registrar blueprints
+    # Registrar routes
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(colaboradores_bp, url_prefix='/api')
     app.register_blueprint(despesas_bp, url_prefix='/api')

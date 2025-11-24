@@ -1,4 +1,4 @@
-# blueprints/colaboradores.py
+# routes/colaboradores.py
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required  # ← JWT, não Flask-Login
 from connection import get_db_connection      # ← seu arquivo de conexão

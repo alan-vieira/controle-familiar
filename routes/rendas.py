@@ -1,4 +1,4 @@
-# blueprints/rendas.py
+# routes/rendas.py
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection

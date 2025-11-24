@@ -1,4 +1,4 @@
-# blueprints/resumo.py
+# routes/resumo.py
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection

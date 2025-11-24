@@ -1,31 +1,25 @@
-# scripts/create_admin_simple.py
+# scripts/create_admin_simple.py (versão aprimorada)
 import os
 import psycopg2
 from werkzeug.security import generate_password_hash
-from urllib.parse import urlparse
 
 def get_connection():
-    """Conexão direta usando DATABASE_URL"""
     DATABASE_URL = os.getenv('DATABASE_URL')
     if not DATABASE_URL:
         print("❌ DATABASE_URL não encontrada")
         exit(1)
-    
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def create_admin_simple():
-    """Versão simplificada sem imports complexos"""
     username = "admin"
     password = "admin123"
     email = "admin@familia.com"
-    
     password_hash = generate_password_hash(password)
     
     try:
         conn = get_connection()
         cur = conn.cursor()
         
-        # Criar tabela se não existir
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuario (
                 id SERIAL PRIMARY KEY,
@@ -37,19 +31,19 @@ def create_admin_simple():
             )
         """)
         
-        # Inserir usuário
-        cur.execute(
-            "INSERT INTO usuario (username, email, password_hash) VALUES (%s, %s, %s)",
-            (username, email, password_hash)
-        )
+        cur.execute("""
+            INSERT INTO usuario (username, email, password_hash)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (username) DO NOTHING
+        """, (username, email, password_hash))
         
         conn.commit()
         cur.close()
         conn.close()
         
-        print("✅ Usuário admin criado com sucesso!")
+        print("✅ Usuário admin garantido no banco!")
         print(f"   Username: {username}")
-        print(f"   Password: {password}")
+        print(f"   Password: {password} (altere após o primeiro login!)")
         
     except Exception as e:
         print(f"❌ Erro: {e}")

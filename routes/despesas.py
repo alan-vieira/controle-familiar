@@ -1,6 +1,9 @@
+# blueprints/despesas.py
 from flask import Blueprint, request, jsonify
-from flask_login import login_required, current_user
-from database import get_db_connection
+from flask_jwt_extended import jwt_required
+from connection import get_db_connection
+from psycopg2.extras import RealDictCursor
+from utils.date_utils import calcular_mes_vigente
 from datetime import datetime
 import logging
 
@@ -8,117 +11,165 @@ logger = logging.getLogger(__name__)
 
 despesas_bp = Blueprint('despesas', __name__)
 
-@despesas_bp.route('/api/despesas', methods=['GET'])
-@login_required
-def despesas():
+CATEGORIAS_VALIDAS = {
+    'moradia', 'alimentacao', 'restaurante_lanche',
+    'casa_utilidades', 'saude', 'transporte', 'lazer_outros'
+}
+
+TIPOS_PG_VALIDOS = {'credito', 'debito', 'pix', 'dinheiro', 'outros'}
+
+def normalizar_tipo_pg(tipo: str) -> str:
+    t = tipo.lower().strip()
+    if 'credito' in t or 'cartao' in t or 'cartão' in t:
+        return 'credito'
+    elif 'debito' in t or 'débito' in t:
+        return 'debito'
+    elif t in ('pix', 'dinheiro', 'outros'):
+        return t
+    return 'outros'
+
+@despesas_bp.route('/despesas', methods=['GET'])
+@jwt_required()
+def listar_despesas():
     try:
         logger.info("GET /api/despesas - Iniciando")
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)  # Isso retorna dicionários
-        
-        cursor.execute("""
-            SELECT d.*, c.nome as colaborador_nome 
-            FROM despesa d 
-            JOIN colaborador c ON d.colaborador_id = c.id 
-            ORDER BY d.data_compra DESC
-        """)
-        despesas = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        # Já são dicionários, só precisamos converter datas e decimais
-        for despesa in despesas:
-            if despesa.get('data_compra'):
-                despesa['data_compra'] = despesa['data_compra'].isoformat()
-            if despesa.get('valor'):
-                despesa['valor'] = float(despesa['valor'])
-        
+        mes = request.args.get('mes_vigente')
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                if mes:
+                    cur.execute("""
+                        SELECT d.*, c.nome AS colaborador_nome
+                        FROM despesa d
+                        JOIN colaborador c ON d.colaborador_id = c.id
+                        WHERE d.mes_vigente = %s
+                        ORDER BY d.data_compra DESC
+                    """, (mes,))
+                else:
+                    cur.execute("""
+                        SELECT d.*, c.nome AS colaborador_nome
+                        FROM despesa d
+                        JOIN colaborador c ON d.colaborador_id = c.id
+                        ORDER BY d.data_compra DESC
+                        LIMIT 100
+                    """)
+                despesas = cur.fetchall()
+
+        # Conversão segura para JSON
+        for d in despesas:
+            if d.get('data_compra'):
+                d['data_compra'] = d['data_compra'].strftime('%Y-%m-%d')
+            if d.get('valor'):
+                d['valor'] = float(d['valor'])
+
         logger.info(f"GET /api/despesas - Encontrados {len(despesas)} registros")
         return jsonify(despesas)
-        
+
     except Exception as e:
         logger.error(f"ERRO GET /api/despesas: {str(e)}", exc_info=True)
         return jsonify({'error': 'Erro ao buscar despesas'}), 500
 
-@despesas_bp.route('/api/despesas', methods=['POST'])
-@login_required
+@despesas_bp.route('/despesas', methods=['POST'])
+@jwt_required()
 def criar_despesa():
     try:
         data = request.get_json()
-        logger.info(f"POST /api/despesas - Dados: {data}")
-        
-        if not data:
+        if not 
             return jsonify({'error': 'Dados JSON inválidos'}), 400
-        
-        # Campos obrigatórios
+
+        # Validação
         required = ['data_compra', 'descricao', 'valor', 'tipo_pg', 'colaborador_id', 'categoria']
-        missing = [field for field in required if field not in data or data[field] in [None, '']]
-        
+        missing = [f for f in required if not data.get(f)]
         if missing:
             return jsonify({'error': f'Campos obrigatórios faltando: {missing}'}), 400
-        
-        # Validar valores
+
         try:
+            data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
             valor = float(data['valor'])
-            colaborador_id = int(data['colaborador_id'])
+            colab_id = int(data['colaborador_id'])
         except (ValueError, TypeError):
-            return jsonify({'error': 'valor ou colaborador_id inválidos'}), 400
-        
-        # Tipos de pagamento válidos
-        tipos_pg_validos = ['credito', 'debito', 'pix', 'dinheiro', 'outros']
-        if data['tipo_pg'] not in tipos_pg_validos:
-            return jsonify({'error': f'tipo_pg inválido. Use: {tipos_pg_validos}'}), 400
-        
-        # Categorias válidas
-        categorias_validas = [
-            'moradia', 'alimentacao', 'restaurante_lanche', 
-            'casa_utilidades', 'saude', 'transporte', 'lazer_outros'
-        ]
-        if data['categoria'] not in categorias_validas:
-            return jsonify({'error': f'categoria inválida. Use: {categorias_validas}'}), 400
-        
-        # Processar data e calcular mes_vigente
-        data_compra = data['data_compra']
-        if 'T' in data_compra:
-            data_compra = data_compra.split('T')[0]
-        
-        data_obj = datetime.strptime(data_compra, '%Y-%m-%d')
-        mes_vigente = data_obj.strftime('%Y-%m')
-        
-        # Inserir no banco
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """INSERT INTO despesa 
-               (data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria) 
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (data_compra, mes_vigente, data['descricao'], valor, data['tipo_pg'], colaborador_id, data['categoria'])
-        )
-        
-        conn.commit()
-        despesa_id = cursor.lastrowid
-        
-        cursor.close()
-        conn.close()
-        
-        response_data = {
+            return jsonify({'error': 'Dados inválidos'}), 400
+
+        tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
+        categoria = data['categoria']
+
+        if tipo_pg not in TIPOS_PG_VALIDOS:
+            return jsonify({'error': 'tipo_pg inválido'}), 400
+        if categoria not in CATEGORIAS_VALIDAS:
+            return jsonify({'error': 'categoria inválida'}), 400
+
+        # Obter dia_fechamento do colaborador
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
+                colab = cur.fetchone()
+                if not colab:
+                    return jsonify({'error': 'Colaborador não encontrado'}), 400
+
+                mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
+
+                # Inserir despesa
+                cur.execute("""
+                    INSERT INTO despesa (
+                        data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                """, (data_compra, mes_vigente, data['descricao'], valor, tipo_pg, colab_id, categoria))
+                despesa_id = cur.fetchone()[0]
+                conn.commit()
+
+        return jsonify({
             'id': despesa_id,
-            'data_compra': data_compra,
             'mes_vigente': mes_vigente,
-            'descricao': data['descricao'],
-            'valor': valor,
-            'tipo_pg': data['tipo_pg'],
-            'colaborador_id': colaborador_id,
-            'categoria': data['categoria'],
             'message': 'Despesa criada com sucesso'
-        }
-        
-        logger.info(f"POST /api/despesas - Sucesso: {response_data}")
-        return jsonify(response_data), 201
-        
+        }), 201
+
     except Exception as e:
         logger.error(f"ERRO POST /api/despesas: {str(e)}", exc_info=True)
         return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+
+@despesas_bp.route('/despesas/<int:id>', methods=['PUT', 'DELETE'])
+@jwt_required()
+def despesa_por_id(id):
+    try:
+        with get_db_connection() as conn:
+            if request.method == 'PUT':
+                data = request.get_json()
+                if not 
+                    return jsonify({'error': 'Dados inválidos'}), 400
+
+                data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
+                valor = float(data['valor'])
+                colab_id = int(data['colaborador_id'])
+                tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
+                categoria = data['categoria']
+
+                if tipo_pg not in TIPOS_PG_VALIDOS or categoria not in CATEGORIAS_VALIDAS:
+                    return jsonify({'error': 'Dados inválidos'}), 400
+
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
+                    colab = cur.fetchone()
+                    if not colab:
+                        return jsonify({'error': 'Colaborador não encontrado'}), 400
+
+                    mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
+
+                    cur.execute("""
+                        UPDATE despesa
+                        SET data_compra=%s, mes_vigente=%s, descricao=%s, valor=%s,
+                            tipo_pg=%s, colaborador_id=%s, categoria=%s
+                        WHERE id=%s
+                    """, (data_compra, mes_vigente, data['descricao'], valor,
+                          tipo_pg, colab_id, categoria, id))
+                    conn.commit()
+                    return jsonify({'message': 'Atualizado'}), 200
+
+            else:  # DELETE
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM despesa WHERE id = %s", (id,))
+                    conn.commit()
+                    return jsonify({'message': 'Deletado'}), 200
+
+    except Exception as e:
+        logger.error(f"Erro em despesa_por_id: {e}")
+        return jsonify({'error': 'Erro interno'}), 500

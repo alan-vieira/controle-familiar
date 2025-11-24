@@ -134,7 +134,7 @@ def despesa_por_id(id):
         with get_db_connection() as conn:
             if request.method == 'PUT':
                 data = request.get_json()
-                if not 
+                if not data:
                     return jsonify({'error': 'Dados inválidos'}), 400
 
                 data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()

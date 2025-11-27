@@ -37,18 +37,14 @@ def rendas():
                         if not validar_mes_ano(mes):
                             return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
                         cur.execute("""
-                            SELECT rm.*, c.nome as colaborador_nome
-                            FROM renda_mensal rm
+                            SELECT rm.*, c.nome FROM renda_mensal rm
                             JOIN colaborador c ON rm.colaborador_id = c.id
                             WHERE rm.mes_ano = %s
-                            ORDER BY c.nome
                         """, (mes,))
                     else:
                         cur.execute("""
-                            SELECT rm.*, c.nome as colaborador_nome
-                            FROM renda_mensal rm
+                            SELECT rm.*, c.nome FROM renda_mensal rm
                             JOIN colaborador c ON rm.colaborador_id = c.id
-                            ORDER BY rm.mes_ano DESC, c.nome
                         """)
                     return jsonify(cur.fetchall())
 

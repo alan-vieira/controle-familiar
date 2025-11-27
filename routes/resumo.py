@@ -1,5 +1,5 @@
 # routes/resumo.py
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
@@ -10,14 +10,10 @@ logger = logging.getLogger(__name__)
 
 resumo_bp = Blueprint('resumo', __name__)
 
-@resumo_bp.route('/resumo')
+@resumo_bp.route('/resumo/<mes_ano>')
 @jwt_required()
-def resumo():
+def resumo(mes_ano):
     # Validar formato do mês
-    mes_ano = request.args.get('mes_vigente')  # ← pega da query string
-    if not mes_ano:
-        return jsonify({"error": "Parâmetro 'mes_vigente' é obrigatório"}), 400
-
     if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
 

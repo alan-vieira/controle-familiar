@@ -18,14 +18,14 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = SECRET_KEY
     app.config['JWT_SECRET_KEY'] = SECRET_KEY
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
     # CORS — atenção: sem espaços na origem!
     CORS(app,
-         origins=['https://controle-familiar-frontend.vercel.app'],
-         supports_credentials=True,
-         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-         allow_headers=['Content-Type', 'Authorization'])
+        origins=['https://controle-familiar-frontend.vercel.app'],
+        supports_credentials=True,
+        methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allow_headers=['Content-Type', 'Authorization'])
 
     # JWT
     jwt = JWTManager(app)

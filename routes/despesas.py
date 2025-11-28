@@ -114,7 +114,7 @@ def criar_despesa():
                         data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """, (data_compra, mes_vigente, data['descricao'], valor, tipo_pg, colab_id, categoria))
-                despesa_id = cur.fetchone()[0]
+                despesa_id = cur.fetchone()['id']
                 conn.commit()
 
         return jsonify({

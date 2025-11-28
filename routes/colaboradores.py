@@ -51,7 +51,7 @@ def criar_colaborador():
                     "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s) RETURNING id",
                     (nome, dia)
                 )
-                colaborador_id = cur.fetchone()[0]
+                colaborador_id = cur.fetchone()['id']
                 conn.commit()
 
         return jsonify({

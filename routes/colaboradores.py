@@ -64,3 +64,49 @@ def criar_colaborador():
     except Exception as e:
         logger.error(f"ERRO POST /api/colaboradores: {str(e)}", exc_info=True)
         return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+
+@colaboradores_bp.route('/colaboradores/<int:id>', methods=['PUT', 'DELETE'])
+@jwt_required()
+def colaborador_por_id(id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Verifica se o colaborador existe
+                cur.execute("SELECT id, nome, dia_fechamento FROM colaborador WHERE id = %s", (id,))
+                colaborador = cur.fetchone()
+                if not colaborador:
+                    return jsonify({"error": "Colaborador não encontrado"}), 404
+
+                if request.method == 'PUT':
+                    data = request.get_json()
+                    if not data:
+                        return jsonify({'error': 'Dados JSON inválidos'}), 400
+
+                    nome = data.get('nome')
+                    dia_fechamento = data.get('dia_fechamento')
+
+                    if not nome or dia_fechamento is None:
+                        return jsonify({'error': 'nome e dia_fechamento são obrigatórios'}), 400
+
+                    try:
+                        dia = int(dia_fechamento)
+                        if not (1 <= dia <= 31):
+                            return jsonify({'error': 'dia_fechamento deve estar entre 1 e 31'}), 400
+                    except (ValueError, TypeError):
+                        return jsonify({'error': 'dia_fechamento deve ser um número'}), 400
+
+                    cur.execute(
+                        "UPDATE colaborador SET nome = %s, dia_fechamento = %s WHERE id = %s",
+                        (nome, dia, id)
+                    )
+                    conn.commit()
+                    return jsonify({"message": "Colaborador atualizado com sucesso"}), 200
+
+                else:  # DELETE
+                    cur.execute("DELETE FROM colaborador WHERE id = %s", (id,))
+                    conn.commit()
+                    return jsonify({"message": "Colaborador excluído com sucesso"}), 200
+
+    except Exception as e:
+        logger.error(f"Erro em colaborador_por_id (id={id}): {str(e)}", exc_info=True)
+        return jsonify({"error": "Erro interno no servidor"}), 500

@@ -44,20 +44,8 @@ CREATE TABLE IF NOT EXISTS divisao_mensal (
     CHECK (mes_ano ~ '^\d{4}-(0[1-9]|1[0-2])$')
 );
 
--- 5. Tabela de usuários (ATUALIZADA com campos completos)
-CREATE TABLE IF NOT EXISTS usuario (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(150) NOT NULL UNIQUE,
-    email VARCHAR(255) UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ativo BOOLEAN DEFAULT true
-);
-
--- 6. Índices para desempenho
+-- 5. Índices para desempenho
 CREATE INDEX IF NOT EXISTS idx_despesa_mes_vigente ON despesa(mes_vigente);
 CREATE INDEX IF NOT EXISTS idx_despesa_colaborador ON despesa(colaborador_id);
 CREATE INDEX IF NOT EXISTS idx_despesa_categoria ON despesa(categoria);
 CREATE INDEX IF NOT EXISTS idx_renda_mes_ano ON renda_mensal(mes_ano);
-CREATE INDEX IF NOT EXISTS idx_usuario_username ON usuario(username);
-CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);

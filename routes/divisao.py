@@ -70,7 +70,7 @@ def marcar_divisao_como_paga(mes_ano):
                     DO UPDATE SET paga = true, data_acerto = EXCLUDED.data_acerto
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano, data_acerto))
-                conn.commit()
+                
                 result = cur.fetchone()
 
                 return jsonify({
@@ -97,7 +97,7 @@ def desmarcar_divisao_como_paga(mes_ano):
                     WHERE mes_ano = %s
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano,))
-                conn.commit()
+                
 
                 if cur.rowcount == 0:
                     cur.execute("""
@@ -105,7 +105,7 @@ def desmarcar_divisao_como_paga(mes_ano):
                         VALUES (%s, false)
                         RETURNING mes_ano, paga, data_acerto
                     """, (mes_ano,))
-                    conn.commit()
+                    
 
                 result = cur.fetchone()
                 return jsonify({

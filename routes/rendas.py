@@ -67,7 +67,7 @@ def rendas():
                         DO UPDATE SET valor = EXCLUDED.valor
                         RETURNING id
                     """, (data['colaborador_id'], data['mes_ano'], data['valor']))
-                    conn.commit()
+                    
                     result = cur.fetchone()
                     return jsonify({
                         "id": result['id'],
@@ -94,12 +94,12 @@ def renda_id(id):
                         return jsonify({"error": "Valor deve ser um número positivo"}), 400
 
                     cur.execute("UPDATE renda_mensal SET valor = %s WHERE id = %s", (data['valor'], id))
-                    conn.commit()
+                    
                     return jsonify({"message": "Renda atualizada com sucesso"})
 
                 else:  # DELETE
                     cur.execute("DELETE FROM renda_mensal WHERE id = %s", (id,))
-                    conn.commit()
+                    
                     return jsonify({"message": "Renda deletada com sucesso"})
 
     except Exception as e:

@@ -115,7 +115,7 @@ def criar_despesa():
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """, (data_compra, mes_vigente, data['descricao'], valor, tipo_pg, colab_id, categoria))
                 despesa_id = cur.fetchone()['id']
-                conn.commit()
+                
 
         return jsonify({
             'id': despesa_id,
@@ -161,13 +161,13 @@ def despesa_por_id(id):
                         WHERE id=%s
                     """, (data_compra, mes_vigente, data['descricao'], valor,
                           tipo_pg, colab_id, categoria, id))
-                    conn.commit()
+                    
                     return jsonify({'message': 'Atualizado'}), 200
 
             else:  # DELETE
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM despesa WHERE id = %s", (id,))
-                    conn.commit()
+                    
                     return jsonify({'message': 'Deletado'}), 200
 
     except Exception as e:

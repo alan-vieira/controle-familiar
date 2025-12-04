@@ -54,7 +54,6 @@ def criar_colaborador():
                     (nome, dia)
                 )
                 colaborador_id = cur.fetchone()['id']
-                conn.commit()
 
         return jsonify({
             'id': colaborador_id,
@@ -100,12 +99,10 @@ def colaborador_por_id(id):
                         "UPDATE colaborador SET nome = %s, dia_fechamento = %s WHERE id = %s",
                         (nome, dia, id)
                     )
-                    conn.commit()
                     return jsonify({"message": "Colaborador atualizado com sucesso"}), 200
 
                 else:  # DELETE
                     cur.execute("DELETE FROM colaborador WHERE id = %s", (id,))
-                    conn.commit()
                     return jsonify({"message": "Colaborador excluído com sucesso"}), 200
 
     except Exception as e:

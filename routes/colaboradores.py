@@ -1,21 +1,23 @@
 # routes/colaboradores.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required  # ← JWT, não Flask-Login
-from connection import get_db_connection      # ← seu arquivo de conexão
-from psycopg2.extras import RealDictCursor    # ← para dicionários no PostgreSQL
+from connection import get_db_connection
+from psycopg2.extras import RealDictCursor
 import logging
+
+# Importe o middleware correto (substituindo jwt_required)
+from app.middleware.auth import require_supabase_auth  # ← vamos criar isso
 
 logger = logging.getLogger(__name__)
 
 colaboradores_bp = Blueprint('colaboradores', __name__)
 
 @colaboradores_bp.route('/colaboradores', methods=['GET'])
-@jwt_required()  # ← Correto para JWT
+@require_supabase_auth  # ← substitui @jwt_required()
 def listar_colaboradores():
     try:
         logger.info("GET /api/colaboradores - Iniciando")
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:  # ← Correto
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT id, nome, dia_fechamento FROM colaborador ORDER BY nome")
                 colaboradores = cur.fetchall()
         logger.info(f"GET /api/colaboradores - Encontrados {len(colaboradores)} registros")
@@ -25,7 +27,7 @@ def listar_colaboradores():
         return jsonify({'error': 'Erro ao buscar colaboradores'}), 500
 
 @colaboradores_bp.route('/colaboradores', methods=['POST'])
-@jwt_required()
+@require_supabase_auth
 def criar_colaborador():
     try:
         data = request.get_json()
@@ -46,7 +48,7 @@ def criar_colaborador():
             return jsonify({'error': 'dia_fechamento deve ser um número'}), 400
 
         with get_db_connection() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:  # ← necessário para usar ['id']
                 cur.execute(
                     "INSERT INTO colaborador (nome, dia_fechamento) VALUES (%s, %s) RETURNING id",
                     (nome, dia)
@@ -63,15 +65,14 @@ def criar_colaborador():
 
     except Exception as e:
         logger.error(f"ERRO POST /api/colaboradores: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+        return jsonify({'error': 'Erro interno no servidor'}), 500
 
 @colaboradores_bp.route('/colaboradores/<int:id>', methods=['PUT', 'DELETE'])
-@jwt_required()
+@require_supabase_auth
 def colaborador_por_id(id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Verifica se o colaborador existe
                 cur.execute("SELECT id, nome, dia_fechamento FROM colaborador WHERE id = %s", (id,))
                 colaborador = cur.fetchone()
                 if not colaborador:

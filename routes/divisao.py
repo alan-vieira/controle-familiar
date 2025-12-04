@@ -1,11 +1,11 @@
 # routes/divisao.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from datetime import date
 import re
 import logging
+from app.middleware.auth import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def validar_mes_ano(mes_ano):
     return bool(re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano))
 
 @divisao_bp.route('/divisao/<mes_ano>', methods=['GET'])
-@jwt_required()
+@require_supabase_auth
 def obter_status_divisao(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
@@ -46,7 +46,7 @@ def obter_status_divisao(mes_ano):
         return jsonify({"error": "Erro interno ao buscar status da divisão"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/marcar-pago', methods=['POST'])
-@jwt_required()
+@require_supabase_auth
 def marcar_divisao_como_paga(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
@@ -83,7 +83,7 @@ def marcar_divisao_como_paga(mes_ano):
         return jsonify({"error": "Erro interno ao atualizar divisão"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
-@jwt_required()
+@require_supabase_auth
 def desmarcar_divisao_como_paga(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400

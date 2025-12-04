@@ -1,11 +1,11 @@
 # routes/despesas.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
 from datetime import datetime
 import logging
+from app.middleware.auth import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def normalizar_tipo_pg(tipo: str) -> str:
     return 'outros'
 
 @despesas_bp.route('/despesas', methods=['GET'])
-@jwt_required()
+@require_supabase_auth
 def listar_despesas():
     try:
         logger.info("GET /api/despesas - Iniciando")
@@ -70,7 +70,7 @@ def listar_despesas():
         return jsonify({'error': 'Erro ao buscar despesas'}), 500
 
 @despesas_bp.route('/despesas', methods=['POST'])
-@jwt_required()
+@require_supabase_auth
 def criar_despesa():
     try:
         data = request.get_json()
@@ -128,7 +128,7 @@ def criar_despesa():
         return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
 @despesas_bp.route('/despesas/<int:id>', methods=['PUT', 'DELETE'])
-@jwt_required()
+@require_supabase_auth
 def despesa_por_id(id):
     try:
         with get_db_connection() as conn:

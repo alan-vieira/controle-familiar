@@ -4,7 +4,7 @@ import requests
 from flask import Blueprint, request, jsonify
 from jose import jwt
 import json
-from app.middleware.auth import require_supabase_auth
+from app.middleware.auth_middleware import require_supabase_auth
 
 auth_bp = Blueprint('auth', __name__)
 

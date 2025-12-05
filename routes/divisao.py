@@ -1,11 +1,11 @@
 # routes/divisao.py
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from datetime import date
 import re
 import logging
-from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def validar_mes_ano(mes_ano):
     return bool(re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano))
 
 @divisao_bp.route('/divisao/<mes_ano>', methods=['GET'])
-@require_supabase_auth
+@jwt_required()
 def obter_status_divisao(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
@@ -46,7 +46,7 @@ def obter_status_divisao(mes_ano):
         return jsonify({"error": "Erro interno ao buscar status da divisão"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/marcar-pago', methods=['POST'])
-@require_supabase_auth
+@jwt_required()
 def marcar_divisao_como_paga(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
@@ -70,7 +70,7 @@ def marcar_divisao_como_paga(mes_ano):
                     DO UPDATE SET paga = true, data_acerto = EXCLUDED.data_acerto
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano, data_acerto))
-                
+                conn.commit()
                 result = cur.fetchone()
 
                 return jsonify({
@@ -83,7 +83,7 @@ def marcar_divisao_como_paga(mes_ano):
         return jsonify({"error": "Erro interno ao atualizar divisão"}), 500
 
 @divisao_bp.route('/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
-@require_supabase_auth
+@jwt_required()
 def desmarcar_divisao_como_paga(mes_ano):
     if not validar_mes_ano(mes_ano):
         return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
@@ -97,7 +97,7 @@ def desmarcar_divisao_como_paga(mes_ano):
                     WHERE mes_ano = %s
                     RETURNING mes_ano, paga, data_acerto
                 """, (mes_ano,))
-                
+                conn.commit()
 
                 if cur.rowcount == 0:
                     cur.execute("""
@@ -105,7 +105,7 @@ def desmarcar_divisao_como_paga(mes_ano):
                         VALUES (%s, false)
                         RETURNING mes_ano, paga, data_acerto
                     """, (mes_ano,))
-                    
+                    conn.commit()
 
                 result = cur.fetchone()
                 return jsonify({

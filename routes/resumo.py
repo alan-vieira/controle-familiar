@@ -1,17 +1,17 @@
 # routes/resumo.py
 from flask import Blueprint, jsonify
+from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import re
 import logging
-from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
 resumo_bp = Blueprint('resumo', __name__)
 
 @resumo_bp.route('/resumo/<mes_ano>')
-@require_supabase_auth
+@jwt_required()
 def resumo(mes_ano):
     # Validar formato do mês
     if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):

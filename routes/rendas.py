@@ -1,10 +1,10 @@
 # routes/rendas.py
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import re
 import logging
-from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def validar_renda_data(data):
     return errors
 
 @rendas_bp.route('/rendas', methods=['GET', 'POST'])
-@require_supabase_auth
+@jwt_required()
 def rendas():
     try:
         if request.method == 'GET':
@@ -67,7 +67,7 @@ def rendas():
                         DO UPDATE SET valor = EXCLUDED.valor
                         RETURNING id
                     """, (data['colaborador_id'], data['mes_ano'], data['valor']))
-                    
+                    conn.commit()
                     result = cur.fetchone()
                     return jsonify({
                         "id": result['id'],
@@ -79,7 +79,7 @@ def rendas():
         return jsonify({"error": "Erro interno no processamento de rendas"}), 500
 
 @rendas_bp.route('/rendas/<int:id>', methods=['PUT', 'DELETE'])
-@require_supabase_auth
+@jwt_required()
 def renda_id(id):
     try:
         with get_db_connection() as conn:
@@ -94,12 +94,12 @@ def renda_id(id):
                         return jsonify({"error": "Valor deve ser um número positivo"}), 400
 
                     cur.execute("UPDATE renda_mensal SET valor = %s WHERE id = %s", (data['valor'], id))
-                    
+                    conn.commit()
                     return jsonify({"message": "Renda atualizada com sucesso"})
 
                 else:  # DELETE
                     cur.execute("DELETE FROM renda_mensal WHERE id = %s", (id,))
-                    
+                    conn.commit()
                     return jsonify({"message": "Renda deletada com sucesso"})
 
     except Exception as e:

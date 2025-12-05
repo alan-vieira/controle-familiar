@@ -1,128 +1,65 @@
 # routes/auth.py
-import os
-import requests
 from flask import Blueprint, request, jsonify
-from jose import jwt
-import json
-from app.middleware.auth_middleware import require_supabase_auth
+from flask_jwt_extended import (
+    create_access_token,
+    jwt_required,
+    get_jwt_identity
+)
+from connection import get_db_connection
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import check_password_hash
 
 auth_bp = Blueprint('auth', __name__)
 
-def get_supabase_user_info(access_token):
-    """Obtém informações do usuário do Supabase usando o token de acesso do Google"""
-    supabase_url = os.getenv('SUPABASE_URL')
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'apikey': os.getenv('SUPABASE_ANON_KEY')
-    }
+@auth_bp.route('/login', methods=['POST', 'OPTIONS'])
+def login():
+    if request.method == 'OPTIONS':
+        return '', 200
 
-    # Fazendo uma requisição para obter informações do usuário autenticado
-    response = requests.get(f'{supabase_url}/auth/v1/user', headers=headers)
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Dados não fornecidos'}), 400
 
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return None
+    username = data.get('username')
+    password = data.get('password')
+    if not username or not password:
+        return jsonify({'error': 'Usuário e senha são obrigatórios'}), 400
 
-@auth_bp.route('/auth/google', methods=['POST'])
-def google_auth():
-    """Rota para autenticação com Google - recebe ID token do Google e faz login no Supabase"""
-    try:
-        data = request.get_json()
-        google_id_token = data.get('token')
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM usuario WHERE username = %s", (username,))
+            user = cur.fetchone()
 
-        if not google_id_token:
-            return jsonify({'error': 'Token do Google é necessário'}), 400
-
-        # Configuração do Supabase para autenticação com Google
-        supabase_url = os.getenv('SUPABASE_URL')
-        supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
-
-        if not supabase_url or not supabase_anon_key:
-            return jsonify({'error': 'Configurações do Supabase ausentes'}), 500
-
-        # Faz a requisição para o Supabase para autenticar com o ID token do Google
-        headers = {
-            'apikey': supabase_anon_key,
-            'Content-Type': 'application/json'
-        }
-
-        # O Supabase tem uma rota específica para autenticação OAuth com ID token
-        auth_response = requests.post(
-            f'{supabase_url}/auth/v1/verify',
-            headers=headers,
-            json={
-                'type': 'id_token',
-                'token': google_id_token,
-                'provider': 'google'
-            }
-        )
-
-        if auth_response.status_code in [200, 201]:
-            auth_data = auth_response.json()
-            return jsonify({
-                'user': auth_data.get('user'),
-                'access_token': auth_data.get('access_token'),
-                'refresh_token': auth_data.get('refresh_token')
-            })
-        else:
-            # Se o método acima não funcionar, tentamos o método alternativo
-            # Enviar o token como parte da URL de callback
-            auth_response_alt = requests.post(
-                f'{supabase_url}/auth/v1/token?grant_type=id_token',
-                headers=headers,
-                json={
-                    'provider': 'google',
-                    'id_token': google_id_token
-                }
-            )
-
-            if auth_response_alt.status_code in [200, 201]:
-                auth_data = auth_response_alt.json()
+            if user and check_password_hash(user['password_hash'], password):
+                access_token = create_access_token(
+                    identity=str(user['id']),
+                    additional_claims={'username': user['username']}
+                )
                 return jsonify({
-                    'user': auth_data.get('user'),
-                    'access_token': auth_data.get('access_token'),
-                    'refresh_token': auth_data.get('refresh_token')
+                    'access_token': access_token,
+                    'user_id': user['id'],
+                    'username': user['username']
+                }), 200
+
+    return jsonify({'error': 'Credenciais inválidas'}), 401
+
+@auth_bp.route('/auth/status', methods=['GET'])
+@jwt_required()
+def auth_status():
+    current_user_id = get_jwt_identity()
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, username FROM usuario WHERE id = %s", (current_user_id,))
+            user = cur.fetchone()
+            if user:
+                return jsonify({
+                    'logged_in': True,
+                    'user_id': user['id'],
+                    'username': user['username']
                 })
-            else:
-                print(f"Erro na autenticação com o Google: {auth_response.text}")
-                return jsonify({'error': 'Falha na autenticação com o Google', 'details': auth_response.text}), 401
+    return jsonify({'logged_in': False}), 401
 
-    except Exception as e:
-        print(f"Exceção durante autenticação com Google: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@auth_bp.route('/auth/me', methods=['GET'])
-@require_supabase_auth
-def get_user():
-    """Rota protegida para obter informações do usuário autenticado"""
-    try:
-        auth_header = request.headers.get('Authorization')
-        token = auth_header.split(' ')[1] if auth_header else None
-
-        if not token:
-            return jsonify({'error': 'Token ausente'}), 401
-
-        # Decodificar o token JWT para obter informações do usuário
-        payload = jwt.decode(
-            token,
-            os.getenv('SUPABASE_JWT_SECRET'),
-            algorithms=['HS256'],
-            audience='authenticated'
-        )
-
-        return jsonify({
-            'user_id': payload.get('sub'),
-            'email': payload.get('email'),
-            'role': payload.get('role'),
-            'exp': payload.get('exp')
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@auth_bp.route('/auth/logout', methods=['POST'])
-@require_supabase_auth
+@auth_bp.route('/logout', methods=['POST'])
+@jwt_required()
 def logout():
-    """Rota para logout (apenas para limpar o lado do cliente)"""
-    return jsonify({'message': 'Logout realizado com sucesso'})
+    return jsonify({'message': 'Logout bem-sucedido'}), 200

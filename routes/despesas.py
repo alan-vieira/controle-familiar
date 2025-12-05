@@ -1,11 +1,11 @@
 # routes/despesas.py
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
 from datetime import datetime
 import logging
-from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def normalizar_tipo_pg(tipo: str) -> str:
     return 'outros'
 
 @despesas_bp.route('/despesas', methods=['GET'])
-@require_supabase_auth
+@jwt_required()
 def listar_despesas():
     try:
         logger.info("GET /api/despesas - Iniciando")
@@ -70,7 +70,7 @@ def listar_despesas():
         return jsonify({'error': 'Erro ao buscar despesas'}), 500
 
 @despesas_bp.route('/despesas', methods=['POST'])
-@require_supabase_auth
+@jwt_required()
 def criar_despesa():
     try:
         data = request.get_json()
@@ -115,7 +115,7 @@ def criar_despesa():
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """, (data_compra, mes_vigente, data['descricao'], valor, tipo_pg, colab_id, categoria))
                 despesa_id = cur.fetchone()['id']
-                
+                conn.commit()
 
         return jsonify({
             'id': despesa_id,
@@ -128,7 +128,7 @@ def criar_despesa():
         return jsonify({'error': f'Erro interno: {str(e)}'}), 500
 
 @despesas_bp.route('/despesas/<int:id>', methods=['PUT', 'DELETE'])
-@require_supabase_auth
+@jwt_required()
 def despesa_por_id(id):
     try:
         with get_db_connection() as conn:
@@ -161,13 +161,13 @@ def despesa_por_id(id):
                         WHERE id=%s
                     """, (data_compra, mes_vigente, data['descricao'], valor,
                           tipo_pg, colab_id, categoria, id))
-                    
+                    conn.commit()
                     return jsonify({'message': 'Atualizado'}), 200
 
             else:  # DELETE
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM despesa WHERE id = %s", (id,))
-                    
+                    conn.commit()
                     return jsonify({'message': 'Deletado'}), 200
 
     except Exception as e:

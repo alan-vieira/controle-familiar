@@ -4,7 +4,7 @@ from connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import re
 import logging
-from app.middleware.auth import require_supabase_auth
+from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 

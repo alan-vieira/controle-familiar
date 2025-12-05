@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
 from datetime import datetime
 import logging
-from app.middleware.auth import require_supabase_auth
+from app.middleware.auth_middleware import require_supabase_auth
 
 logger = logging.getLogger(__name__)
 

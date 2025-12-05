@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 import logging
 
 # Importe o middleware correto (substituindo jwt_required)
-from app.middleware.auth import require_supabase_auth  # ← vamos criar isso
+from app.middleware.auth_middleware import require_supabase_auth  # ← vamos criar isso
 
 logger = logging.getLogger(__name__)
 

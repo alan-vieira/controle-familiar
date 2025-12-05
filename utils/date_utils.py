@@ -1,4 +1,6 @@
 # utils/date_utils.py
+from datetime import date
+
 def calcular_mes_vigente(data_compra: date, tipo_pg: str, dia_fechamento: int) -> str:
     """
     Calcula o mês vigente com base na data de compra, tipo de pagamento e dia de fechamento.

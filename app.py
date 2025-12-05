@@ -3,12 +3,13 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-# Importação dos blueprints (sem auth_bp)
+# Importação dos blueprints
 from routes.colaboradores import colaboradores_bp
 from routes.despesas import despesas_bp
 from routes.rendas import rendas_bp
 from routes.divisao import divisao_bp
 from routes.resumo import resumo_bp
+from routes.auth import auth_bp
 
 def create_app():
     app = Flask(__name__)
@@ -38,6 +39,7 @@ def create_app():
     app.register_blueprint(rendas_bp, url_prefix='/api')
     app.register_blueprint(divisao_bp, url_prefix='/api')
     app.register_blueprint(resumo_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp, url_prefix='/api')
 
     return app
 

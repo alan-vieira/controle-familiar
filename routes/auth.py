@@ -72,7 +72,7 @@ def register():
     }), 201
 
 # ─── LOGIN ───────────────────────────────────────────────
-@auth_bp.route('/auth/login', methods=['POST', 'OPTIONS'])
+@auth_bp.route('/login', methods=['POST', 'OPTIONS'])
 def login():
     if request.method == 'OPTIONS':
         return '', 200
@@ -122,7 +122,7 @@ def auth_status():
     return jsonify({'logged_in': False}), 401
 
 # ─── LOGOUT ──────────────────────────────────────────────
-@auth_bp.route('/auth/logout', methods=['POST'])
+@auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
     return jsonify({'message': 'Logout bem-sucedido'}), 200

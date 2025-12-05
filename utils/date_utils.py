@@ -1,35 +1,38 @@
-# utils/date_utils.py
-from datetime import date
+from datetime import date, timedelta
 
 def calcular_mes_vigente(data_compra: date, tipo_pg: str, dia_fechamento: int) -> str:
     """
-    Calcula o mês vigente com base na data de compra, tipo de pagamento e dia de fechamento.
+    Calcula o mês vigente (mês da fatura) para cartões de crédito.
     
-    Regras:
-    - Débito, Pix, dinheiro: mes_vigente = mês da compra.
-    - Crédito:
-        - Se data_compra.day < dia_fechamento → mes_vigente = mês seguinte (M+1)
-        - Se data_compra.day >= dia_fechamento → mes_vigente = mês + 2 (M+2)
+    Regra real:
+    - O ciclo do cartão termina no dia `dia_fechamento` do mês seguinte à compra.
+    - Se a compra ocorre ATÉ o dia de fechamento do ciclo atual → mês vigente = mês seguinte (M+1)
+    - Se a compra ocorre APÓS esse dia → mês vigente = M+2
     """
     tipo_pg_normalizado = tipo_pg.lower().strip()
-    if tipo_pg_normalizado not in ('credito', 'cartao', 'cartão'):
+    
+    # Normaliza tipos de crédito
+    if tipo_pg_normalizado not in ('credito', 'crédito', 'cartao de credito', 'cartão de crédito', 'cartão', 'cartao'):
         # Pagamento imediato
         return data_compra.strftime('%Y-%m')
-    
-    # Cartão de crédito → vai para o futuro
-    if data_compra.day >= dia_fechamento:
-        # Mês + 2
-        year = data_compra.year
-        month = data_compra.month + 2
-        if month > 12:
-            month -= 12
-            year += 1
-        return f"{year}-{month:02d}"
+
+    # Determina o último dia do ciclo atual (dia_fechamento do próximo mês)
+    # Ex: compra em nov/2025 → ciclo termina em 02/dez/2025
+    if data_compra.month == 12:
+        ciclo_fim = date(data_compra.year + 1, 1, dia_fechamento)
     else:
-        # Mês + 1
-        year = data_compra.year
-        month = data_compra.month + 1
-        if month > 12:
-            month = 1
-            year += 1
-        return f"{year}-{month:02d}"
+        ciclo_fim = date(data_compra.year, data_compra.month + 1, dia_fechamento)
+
+    # Ajusta se o dia_fechamento for inválido (ex: 31 em mês com 30 dias)
+    # (opcional: você pode adicionar validação aqui)
+
+    if data_compra <= ciclo_fim:
+        meses_a_adicionar = 1
+    else:
+        meses_a_adicionar = 2
+
+    # Cálculo robusto do mês/ano
+    total_months = data_compra.year * 12 + data_compra.month - 1 + meses_a_adicionar
+    year = total_months // 12
+    month = total_months % 12 + 1
+    return f"{year}-{month:02d}"

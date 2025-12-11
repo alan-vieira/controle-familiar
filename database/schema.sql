@@ -61,3 +61,16 @@ CREATE INDEX IF NOT EXISTS idx_despesa_categoria ON despesa(categoria);
 CREATE INDEX IF NOT EXISTS idx_renda_mes_ano ON renda_mensal(mes_ano);
 CREATE INDEX IF NOT EXISTS idx_usuario_username ON usuario(username);
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
+
+
+-- Ninguém pode mais acessar public.* via API REST (PostgREST).
+-- 1. Revogar acesso de roles públicas (anon, authenticated) ao esquema public
+REVOKE USAGE ON SCHEMA public FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
+
+-- 2. (Opcional) Garantir que novas tabelas futuras também não herdem permissões
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;

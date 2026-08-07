@@ -1,14 +1,18 @@
 # routes/despesas.py
+"""
+Despesas routes - Protected with JWT authentication.
+
+All endpoints require valid JWT token.
+"""
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from connection import get_db_connection
+from connection import get_db_connection, get_db_cursor
 from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
 from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
-
 despesas_bp = Blueprint('despesas', __name__)
 
 CATEGORIAS_VALIDAS = {
@@ -17,6 +21,15 @@ CATEGORIAS_VALIDAS = {
 }
 
 TIPOS_PG_VALIDOS = {'credito', 'debito', 'pix', 'dinheiro', 'outros'}
+
+
+def _error_response(message: str, code: str, status: int = 400) -> tuple:
+    return jsonify({'error': message, 'code': code}), status
+
+
+def _success_response(data: dict, status: int = 200) -> tuple:
+    return jsonify(data), status
+
 
 def normalizar_tipo_pg(tipo: str) -> str:
     t = tipo.lower().strip()
@@ -28,9 +41,11 @@ def normalizar_tipo_pg(tipo: str) -> str:
         return t
     return 'outros'
 
+
 @despesas_bp.route('/despesas', methods=['GET'])
 @jwt_required()
 def listar_despesas():
+    """List expenses, optionally filtered by month."""
     try:
         logger.info("GET /api/despesas - Iniciando")
         mes = request.args.get('mes_vigente')
@@ -55,102 +70,114 @@ def listar_despesas():
                     """)
                 despesas = cur.fetchall()
 
-        # Conversão segura para JSON
+        # Convert to JSON-serializable format
         for d in despesas:
             if d.get('data_compra'):
                 d['data_compra'] = d['data_compra'].strftime('%Y-%m-%d')
-            if d.get('valor'):
+            if d.get('valor') is not None:
                 d['valor'] = float(d['valor'])
 
         logger.info(f"GET /api/despesas - Encontrados {len(despesas)} registros")
-        return jsonify(despesas)
+        return _success_response(despesas)
 
     except Exception as e:
         logger.error(f"ERRO GET /api/despesas: {str(e)}", exc_info=True)
-        return jsonify({'error': 'Erro ao buscar despesas'}), 500
+        return _error_response('Erro ao buscar despesas', 'FETCH_FAILED', 500)
+
 
 @despesas_bp.route('/despesas', methods=['POST'])
 @jwt_required()
 def criar_despesa():
+    """Create a new expense."""
     try:
         data = request.get_json()
         if not data:
-            return jsonify({'error': 'Dados JSON inválidos'}), 400
+            return _error_response('Dados JSON inválidos', 'INVALID_JSON')
 
-        # Validação
+        # Validation
         required = ['data_compra', 'descricao', 'valor', 'tipo_pg', 'colaborador_id', 'categoria']
         missing = [f for f in required if not data.get(f)]
         if missing:
-            return jsonify({'error': f'Campos obrigatórios faltando: {missing}'}), 400
+            return _error_response(f'Campos obrigatórios faltando: {missing}', 'MISSING_FIELDS')
 
         try:
             data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
             valor = float(data['valor'])
+            if valor < 0:
+                return _error_response('Valor deve ser positivo', 'INVALID_VALUE')
             colab_id = int(data['colaborador_id'])
         except (ValueError, TypeError):
-            return jsonify({'error': 'Dados inválidos'}), 400
+            return _error_response('Dados inválidos (data, valor ou colaborador_id)', 'INVALID_DATA')
 
         tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
         categoria = data['categoria']
 
         if tipo_pg not in TIPOS_PG_VALIDOS:
-            return jsonify({'error': 'tipo_pg inválido'}), 400
+            return _error_response('tipo_pg inválido', 'INVALID_TIPO_PG')
         if categoria not in CATEGORIAS_VALIDAS:
-            return jsonify({'error': 'categoria inválida'}), 400
+            return _error_response('categoria inválida', 'INVALID_CATEGORY')
 
-        # Obter dia_fechamento do colaborador
+        # Get collaborator's closing day
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
                 colab = cur.fetchone()
                 if not colab:
-                    return jsonify({'error': 'Colaborador não encontrado'}), 400
+                    return _error_response('Colaborador não encontrado', 'COLLABORATOR_NOT_FOUND', 404)
 
                 mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
 
-                # Inserir despesa
+                # Insert expense
                 cur.execute("""
                     INSERT INTO despesa (
                         data_compra, mes_vigente, descricao, valor, tipo_pg, colaborador_id, categoria
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """, (data_compra, mes_vigente, data['descricao'], valor, tipo_pg, colab_id, categoria))
                 despesa_id = cur.fetchone()['id']
-                conn.commit()
 
-        return jsonify({
+        logger.info(f"Despesa criada: id={despesa_id}, mes={mes_vigente}")
+        return _success_response({
             'id': despesa_id,
             'mes_vigente': mes_vigente,
             'message': 'Despesa criada com sucesso'
-        }), 201
+        }, 201)
 
     except Exception as e:
         logger.error(f"ERRO POST /api/despesas: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Erro interno: {str(e)}'}), 500
+        return _error_response('Erro interno', 'CREATE_FAILED', 500)
+
 
 @despesas_bp.route('/despesas/<int:id>', methods=['PUT', 'DELETE'])
 @jwt_required()
-def despesa_por_id(id):
+def despesa_por_id(id: int):
+    """Update or delete an expense by ID."""
     try:
         with get_db_connection() as conn:
             if request.method == 'PUT':
                 data = request.get_json()
                 if not data:
-                    return jsonify({'error': 'Dados inválidos'}), 400
+                    return _error_response('Dados inválidos', 'INVALID_JSON')
 
-                data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
-                valor = float(data['valor'])
-                colab_id = int(data['colaborador_id'])
+                try:
+                    data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
+                    valor = float(data['valor'])
+                    if valor < 0:
+                        return _error_response('Valor deve ser positivo', 'INVALID_VALUE')
+                    colab_id = int(data['colaborador_id'])
+                except (ValueError, TypeError):
+                    return _error_response('Dados inválidos', 'INVALID_DATA')
+
                 tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
                 categoria = data['categoria']
 
                 if tipo_pg not in TIPOS_PG_VALIDOS or categoria not in CATEGORIAS_VALIDAS:
-                    return jsonify({'error': 'Dados inválidos'}), 400
+                    return _error_response('Dados inválidos', 'INVALID_DATA')
 
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SELECT dia_fechamento FROM colaborador WHERE id = %s", (colab_id,))
                     colab = cur.fetchone()
                     if not colab:
-                        return jsonify({'error': 'Colaborador não encontrado'}), 400
+                        return _error_response('Colaborador não encontrado', 'COLLABORATOR_NOT_FOUND', 404)
 
                     mes_vigente = calcular_mes_vigente(data_compra, tipo_pg, colab['dia_fechamento'])
 
@@ -162,14 +189,14 @@ def despesa_por_id(id):
                     """, (data_compra, mes_vigente, data['descricao'], valor,
                           tipo_pg, colab_id, categoria, id))
                     conn.commit()
-                    return jsonify({'message': 'Atualizado'}), 200
+                    return _success_response({'message': 'Atualizado com sucesso'})
 
             else:  # DELETE
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM despesa WHERE id = %s", (id,))
                     conn.commit()
-                    return jsonify({'message': 'Deletado'}), 200
+                    return _success_response({'message': 'Deletado com sucesso'})
 
     except Exception as e:
         logger.error(f"Erro em despesa_por_id: {e}")
-        return jsonify({'error': 'Erro interno'}), 500
+        return _error_response('Erro interno', 'OPERATION_FAILED', 500)

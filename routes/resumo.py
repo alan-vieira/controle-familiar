@@ -1,21 +1,34 @@
 # routes/resumo.py
+"""
+Resumo Financeiro routes - Protected with JWT authentication.
+
+All endpoints require valid JWT token.
+"""
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
-from connection import get_db_connection
+from connection import get_db_connection, get_db_cursor
 from psycopg2.extras import RealDictCursor
 import re
 import logging
 
 logger = logging.getLogger(__name__)
-
 resumo_bp = Blueprint('resumo', __name__)
+
+
+def _error_response(message: str, code: str, status: int = 400) -> tuple:
+    return jsonify({'error': message, 'code': code}), status
+
+
+def _success_response(data: dict, status: int = 200) -> tuple:
+    return jsonify(data), status
+
 
 @resumo_bp.route('/resumo/<mes_ano>')
 @jwt_required()
-def resumo(mes_ano):
+def resumo(mes_ano: str):
     # Validar formato do mês
     if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
-        return jsonify({"error": "Formato de mês inválido. Use YYYY-MM."}), 400
+        return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
 
     try:
         with get_db_connection() as conn:
@@ -24,12 +37,12 @@ def resumo(mes_ano):
                 cur.execute("SELECT COUNT(*) as total FROM colaborador")
                 total_colabs = cur.fetchone()['total']
                 if total_colabs == 0:
-                    return jsonify({"error": "Nenhum colaborador cadastrado"}), 400
+                    return _error_response("Nenhum colaborador cadastrado", 'NO_COLLABORATORS')
 
                 # 2. Total de despesas
                 cur.execute("""
-                    SELECT COALESCE(SUM(valor), 0) AS total 
-                    FROM despesa 
+                    SELECT COALESCE(SUM(valor), 0) AS total
+                    FROM despesa
                     WHERE mes_vigente = %s
                 """, (mes_ano,))
                 total_despesas = float(cur.fetchone()['total'])
@@ -46,14 +59,15 @@ def resumo(mes_ano):
                 # Verificar rendas faltantes
                 colaboradores_sem_renda = [r['nome'] for r in rendas if r['valor'] is None]
                 if colaboradores_sem_renda:
-                    return jsonify({
-                        "error": f"Rendas não registradas para: {', '.join(colaboradores_sem_renda)}",
-                        "colaboradores_sem_renda": colaboradores_sem_renda
-                    }), 400
+                    return _error_response(
+                        f"Rendas não registradas para: {', '.join(colaboradores_sem_renda)}",
+                        'MISSING_INCOMES',
+                        400
+                    )
 
                 total_renda = sum(float(r['valor']) for r in rendas)
                 if total_renda == 0:
-                    return jsonify({"error": "Renda total zero para o mês"}), 400
+                    return _error_response("Renda total zero para o mês", 'ZERO_INCOME')
 
                 # 4. Pagamentos por colaborador
                 pagamentos = {}
@@ -87,7 +101,7 @@ def resumo(mes_ano):
 
                 colaboradores.sort(key=lambda x: x['saldo'], reverse=True)
 
-                return jsonify({
+                return _success_response({
                     "mes": mes_ano,
                     "total_despesas": round(total_despesas, 2),
                     "total_renda": round(total_renda, 2),
@@ -98,4 +112,4 @@ def resumo(mes_ano):
 
     except Exception as e:
         logger.error(f"Erro ao gerar resumo para {mes_ano}: {e}")
-        return jsonify({"error": "Erro interno no cálculo do resumo"}), 500
+        return _error_response("Erro interno no cálculo do resumo", 'CALCULATION_FAILED', 500)

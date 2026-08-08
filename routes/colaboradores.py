@@ -5,7 +5,7 @@ Colaboradores routes - Protected with JWT authentication.
 All endpoints require valid JWT token.
 Users can only access their own family's collaborators (future: multi-family support).
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from connection import get_db_connection, get_db_cursor
 from psycopg2.extras import RealDictCursor
@@ -15,12 +15,14 @@ logger = logging.getLogger(__name__)
 colaboradores_bp = Blueprint('colaboradores', __name__)
 
 
-def _error_response(message: str, code: str, status: int = 400) -> tuple:
-    return jsonify({'error': message, 'code': code}), status
+def _error_response(message: str, code: str, status: int = 400):
+    from utils.json_utils import json_response
+    return json_response({'error': message, 'code': code}, status)
 
 
-def _success_response(data: dict, status: int = 200) -> tuple:
-    return jsonify(data), status
+def _success_response(data: dict, status: int = 200):
+    from utils.json_utils import json_response
+    return json_response(data, status)
 
 
 def _get_current_user_id() -> int:
@@ -124,6 +126,25 @@ def colaborador_por_id(id: int):
                 return _success_response({"message": "Colaborador atualizado com sucesso"})
 
             else:  # DELETE
+                # NOVA VALIDAÇÃO: verificar despesas vinculadas
+                cur.execute("SELECT COUNT(*) FROM despesa WHERE colaborador_id = %s", (id,))
+                if cur.fetchone()[0] > 0:
+                    return _error_response(
+                        "Não é possível excluir: colaborador possui despesas cadastradas",
+                        'HAS_EXPENSES',
+                        409
+                    )
+
+                # NOVA VALIDAÇÃO: verificar rendas vinculadas
+                cur.execute("SELECT COUNT(*) FROM renda_mensal WHERE colaborador_id = %s", (id,))
+                if cur.fetchone()[0] > 0:
+                    return _error_response(
+                        "Não é possível excluir: colaborador possui rendas cadastradas",
+                        'HAS_INCOMES',
+                        409
+                    )
+
+                # Pode deletar
                 cur.execute("DELETE FROM colaborador WHERE id = %s", (id,))
                 return _success_response({"message": "Colaborador excluído com sucesso"})
 

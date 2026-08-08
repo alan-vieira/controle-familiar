@@ -4,11 +4,14 @@ Despesas routes - Protected with JWT authentication.
 
 All endpoints require valid JWT token.
 """
-from flask import Blueprint, request, jsonify
+from decimal import Decimal, InvalidOperation
+from datetime import date
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection, get_db_cursor
 from psycopg2.extras import RealDictCursor
 from utils.date_utils import calcular_mes_vigente
+from utils.json_utils import json_response
 from datetime import datetime
 import logging
 
@@ -23,12 +26,12 @@ CATEGORIAS_VALIDAS = {
 TIPOS_PG_VALIDOS = {'credito', 'debito', 'pix', 'dinheiro', 'outros'}
 
 
-def _error_response(message: str, code: str, status: int = 400) -> tuple:
-    return jsonify({'error': message, 'code': code}), status
+def _error_response(message: str, code: str, status: int = 400):
+    return json_response({'error': message, 'code': code}, status)
 
 
-def _success_response(data: dict, status: int = 200) -> tuple:
-    return jsonify(data), status
+def _success_response(data: dict, status: int = 200):
+    return json_response(data, status)
 
 
 def normalizar_tipo_pg(tipo: str) -> str:
@@ -70,12 +73,10 @@ def listar_despesas():
                     """)
                 despesas = cur.fetchall()
 
-        # Convert to JSON-serializable format
+        # Convert date to string, keep Decimal as-is (json_response handles it)
         for d in despesas:
             if d.get('data_compra'):
                 d['data_compra'] = d['data_compra'].strftime('%Y-%m-%d')
-            if d.get('valor') is not None:
-                d['valor'] = float(d['valor'])
 
         logger.info(f"GET /api/despesas - Encontrados {len(despesas)} registros")
         return _success_response(despesas)
@@ -102,12 +103,16 @@ def criar_despesa():
 
         try:
             data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
-            valor = float(data['valor'])
-            if valor < 0:
+            valor = Decimal(str(data['valor']))
+            if valor <= Decimal('0'):
                 return _error_response('Valor deve ser positivo', 'INVALID_VALUE')
             colab_id = int(data['colaborador_id'])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             return _error_response('Dados inválidos (data, valor ou colaborador_id)', 'INVALID_DATA')
+
+        # NOVA VALIDAÇÃO: data_compra não pode ser no futuro
+        if data_compra > date.today():
+            return _error_response('Data da compra não pode ser no futuro', 'FUTURE_DATE')
 
         tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
         categoria = data['categoria']
@@ -160,12 +165,16 @@ def despesa_por_id(id: int):
 
                 try:
                     data_compra = datetime.strptime(data['data_compra'].split('T')[0], '%Y-%m-%d').date()
-                    valor = float(data['valor'])
-                    if valor < 0:
+                    valor = Decimal(str(data['valor']))
+                    if valor <= Decimal('0'):
                         return _error_response('Valor deve ser positivo', 'INVALID_VALUE')
                     colab_id = int(data['colaborador_id'])
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, InvalidOperation):
                     return _error_response('Dados inválidos', 'INVALID_DATA')
+
+                # NOVA VALIDAÇÃO: data_compra não pode ser no futuro
+                if data_compra > date.today():
+                    return _error_response('Data da compra não pode ser no futuro', 'FUTURE_DATE')
 
                 tipo_pg = normalizar_tipo_pg(data['tipo_pg'])
                 categoria = data['categoria']

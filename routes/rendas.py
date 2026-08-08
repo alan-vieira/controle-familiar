@@ -4,7 +4,8 @@ Rendas routes - Protected with JWT authentication.
 
 All endpoints require valid JWT token.
 """
-from flask import Blueprint, request, jsonify
+from decimal import Decimal, InvalidOperation
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required
 from connection import get_db_connection, get_db_cursor
 from psycopg2.extras import RealDictCursor
@@ -15,12 +16,14 @@ logger = logging.getLogger(__name__)
 rendas_bp = Blueprint('rendas', __name__)
 
 
-def _error_response(message: str, code: str, status: int = 400) -> tuple:
-    return jsonify({'error': message, 'code': code}), status
+def _error_response(message: str, code: str, status: int = 400):
+    from utils.json_utils import json_response
+    return json_response({'error': message, 'code': code}, status)
 
 
-def _success_response(data: dict, status: int = 200) -> tuple:
-    return jsonify(data), status
+def _success_response(data: dict, status: int = 200):
+    from utils.json_utils import json_response
+    return json_response(data, status)
 
 
 def validar_mes_ano(mes_ano: str) -> bool:
@@ -35,8 +38,13 @@ def validar_renda_data(data: dict) -> list:
         errors.append("colaborador_id é obrigatório e deve ser um número inteiro")
     if not validar_mes_ano(data.get('mes_ano', '')):
         errors.append("mes_ano é obrigatório e deve estar no formato YYYY-MM")
-    if not isinstance(data.get('valor'), (int, float)) or (data.get('valor') or -1) < 0:
-        errors.append("valor é obrigatório e deve ser um número positivo")
+    if 'valor' in data:
+        try:
+            valor = Decimal(str(data['valor']))
+            if valor <= Decimal('0'):
+                errors.append("valor é obrigatório e deve ser um número positivo")
+        except (InvalidOperation, TypeError):
+            errors.append("valor deve ser um número válido")
     return errors
 
 
@@ -61,6 +69,7 @@ def rendas():
                             SELECT rm.*, c.nome FROM renda_mensal rm
                             JOIN colaborador c ON rm.colaborador_id = c.id
                         """)
+                    # Decimal values are preserved from database (RealDictCursor returns Decimal)
                     return _success_response(cur.fetchall())
 
         else:  # POST
@@ -74,13 +83,15 @@ def rendas():
                 if not cur.fetchone():
                     return _error_response("Colaborador não encontrado", 'COLLABORATOR_NOT_FOUND', 404)
 
+                valor = Decimal(str(data['valor']))
+
                 cur.execute("""
                     INSERT INTO renda_mensal (colaborador_id, mes_ano, valor)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (colaborador_id, mes_ano)
                     DO UPDATE SET valor = EXCLUDED.valor
                     RETURNING id
-                """, (data['colaborador_id'], data['mes_ano'], data['valor']))
+                """, (data['colaborador_id'], data['mes_ano'], valor))
                 result = cur.fetchone()
                 return _success_response({
                     "id": result['id'],
@@ -104,10 +115,17 @@ def renda_id(id: int):
 
                 if request.method == 'PUT':
                     data = request.get_json()
-                    if not isinstance(data, dict) or not isinstance(data.get('valor'), (int, float)) or data.get('valor', -1) < 0:
-                        return _error_response("Valor deve ser um número positivo", 'INVALID_VALUE')
+                    if not isinstance(data, dict) or 'valor' not in data:
+                        return _error_response("Valor é obrigatório", 'INVALID_VALUE')
 
-                    cur.execute("UPDATE renda_mensal SET valor = %s WHERE id = %s", (data['valor'], id))
+                    try:
+                        valor = Decimal(str(data['valor']))
+                        if valor <= Decimal('0'):
+                            return _error_response("Valor deve ser um número positivo", 'INVALID_VALUE')
+                    except (InvalidOperation, TypeError):
+                        return _error_response("Valor deve ser um número válido", 'INVALID_VALUE')
+
+                    cur.execute("UPDATE renda_mensal SET valor = %s WHERE id = %s", (valor, id))
                     conn.commit()
                     return _success_response({"message": "Renda atualizada com sucesso"})
 

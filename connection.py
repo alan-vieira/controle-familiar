@@ -1,16 +1,29 @@
-"""
-Database connection pool management for PostgreSQL using psycopg2.
+"""Database connection pool management for PostgreSQL using psycopg2.
 
 Provides thread-safe connection pooling with context managers for safe
 connection handling, automatic rollback on errors, and proper cleanup.
+
+Decimal support:
+- Registers adapter to send Decimal as NUMERIC to PostgreSQL
+- RealDictCursor returns Decimal values from NUMERIC columns automatically
 """
 import os
 from contextlib import contextmanager
+from decimal import Decimal
 from typing import Generator, Optional
 
 import psycopg2
+from psycopg2.extensions import AsIs, register_adapter
 from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor
+
+
+# Register Decimal adapter for psycopg2 - sends Decimal as NUMERIC literal
+def _adapt_decimal(d: Decimal) -> AsIs:
+    return AsIs(str(d))
+
+
+register_adapter(Decimal, _adapt_decimal)
 
 # Global connection pool instance
 _pool: Optional[ThreadedConnectionPool] = None

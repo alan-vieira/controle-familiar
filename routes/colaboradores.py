@@ -126,25 +126,35 @@ def colaborador_por_id(id: int):
                 return _success_response({"message": "Colaborador atualizado com sucesso"})
 
             else:  # DELETE
-                # NOVA VALIDAÇÃO: verificar despesas vinculadas
-                cur.execute("SELECT COUNT(*) FROM despesa WHERE colaborador_id = %s", (id,))
-                if cur.fetchone()[0] > 0:
+                # Verificar despesas vinculadas
+                cur.execute("""
+                    SELECT COUNT(*) as total 
+                    FROM despesa 
+                    WHERE colaborador_id = %s
+                """, (id,))
+                result = cur.fetchone()
+                if result and result['total'] > 0:
                     return _error_response(
                         "Não é possível excluir: colaborador possui despesas cadastradas",
                         'HAS_EXPENSES',
                         409
                     )
 
-                # NOVA VALIDAÇÃO: verificar rendas vinculadas
-                cur.execute("SELECT COUNT(*) FROM renda_mensal WHERE colaborador_id = %s", (id,))
-                if cur.fetchone()[0] > 0:
+                # Verificar rendas vinculadas
+                cur.execute("""
+                    SELECT COUNT(*) as total 
+                    FROM renda_mensal 
+                    WHERE colaborador_id = %s
+                """, (id,))
+                result = cur.fetchone()
+                if result and result['total'] > 0:
                     return _error_response(
                         "Não é possível excluir: colaborador possui rendas cadastradas",
                         'HAS_INCOMES',
                         409
                     )
-
-                # Pode deletar
+                
+                # Pode deletar com segurança
                 cur.execute("DELETE FROM colaborador WHERE id = %s", (id,))
                 return _success_response({"message": "Colaborador excluído com sucesso"})
 

@@ -1,11 +1,60 @@
 # Changelog
 
-Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
+Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+
+_Pronto para receber mudanças da próxima versão._
+
+---
+
+## [0.2.0] - 2026-08-08
+
+**Fase 3: Precisão Financeira e Integridade de Dados**
+
+### Added
+- **`utils/json_utils.py`** com `DecimalEncoder` para serialização JSON precisa de valores monetários (Decimal como string)
+- **Helper `json_response()`** que usa o encoder customizado em todas as rotas
+- **Validação de data futura** em despesas: bloqueia com código `FUTURE_DATE` (HTTP 400)
+- **Validação de integridade referencial** no DELETE de colaboradores:
+  - Código `HAS_EXPENSES` (HTTP 409) se o colaborador tem despesas vinculadas
+  - Código `HAS_INCOMES` (HTTP 409) se o colaborador tem rendas vinculadas
+- **Tratamento de centavos residuais** em divisão proporcional no resumo (ex: R$ 100,00 / 3 pessoas fecha em exatamente R$ 100,00)
+- **Adapter Decimal ↔ NUMERIC** em `connection.py` via `psycopg2.extensions.register_adapter`
+- **Migração SQL** `migrations/001_add_indexes.sql` com índices de performance:
+  - `idx_despesa_mes_vigente`
+  - `idx_despesa_colaborador_mes`
+  - `idx_renda_mes_ano`
+  - `idx_renda_colaborador_mes`
+
+### Changed
+- **Migração completa de `float` para `Decimal`** em todas as rotas que manipulam valores monetários:
+  - `routes/despesas.py`: criação, atualização e serialização
+  - `routes/rendas.py`: validação e armazenamento
+  - `routes/resumo.py`: soma, porcentagem e divisão
+- **Otimização N+1** no endpoint de resumo: substituído loop de N queries por uma única query com `GROUP BY colaborador_id`
+- Todas as rotas passam a usar `json_response()` em vez de `jsonify` direto
+- Arredondamento com `Decimal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)` em vez de `round(..., 2)` em float
+
+### Fixed
+- **Erro de precisão** `0.1 + 0.2 = 0.30000000000000004` resolvido com `Decimal(str(valor))`
+- **Drift de centavos** em soma de múltiplas despesas eliminado
+- **Divisão proporcional** agora distribui centavo residual no último colaborador (soma das partes = total exato)
+- **`KeyError: 0`** no DELETE de colaboradores com `RealDictCursor` corrigido (acesso por chave `'total'` em vez de índice `[0]`)
+
+### Security
+- Bloqueio de exclusão de colaboradores com dados financeiros vinculados (protege integridade referencial)
+- Rejeição de despesas com datas futuras (previne fraude/erro de datas)
+- Valores monetários serializados como string preservam precisão exata no JSON
+
+---
+
+## [0.1.0] - 2026-08-07
+
+**Fase 1 & 2: Foundation Segura e Autenticação**
 
 ### Added
 - **Application Factory Pattern**: `create_app()` function em `app.py` para criação única da instância Flask
@@ -24,10 +73,13 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Respeito ao sslmode da URL**: Não sobrescreve `sslmode` se já presente na `DATABASE_URL`
 - **Arquivo `.env.example`**: Template com todas as variáveis necessárias
 - **Logging Estruturado**: Configuração básica com formato timestamp + level + logger
+- **Hash de senha com PBKDF2** (via Werkzeug)
+- **Blacklist de tokens JWT** (logout real)
+- **Refresh token** para renovação de sessão
 
 ### Changed
 - **`app.py`**: Corrigido `Flask(name)` → `Flask(__name__)` e `if name == 'main':` → `if __name__ == '__main__':`
-- **`app.py`**: Removido recriação da app a cada request no handler WSGI (era `def application(environ, start_response): app = create_app()`)
+- **`app.py`**: Removido recriação da app a cada request no handler WSGI
 - **`app.py`**: Linha `Importe seus routes` transformada em imports reais dos blueprints
 - **`app.py`**: CORS hardcoded removido → agora usa `CurrentConfig.CORS_ORIGINS` do ambiente
 - **`config.py`**: Removido fallback inseguro `'sua_chave_secreta_aleatoria_segura'` para `SECRET_KEY`
@@ -45,7 +97,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Fixed
 - **Sintaxe**: `Flask(__name__)` e `if __name__ == '__main__':` corrigidos
-- **Indentação**: Corrigidas indentação inconsistentes em `app.py`
+- **Indentação**: Corrigidas indentações inconsistentes em `app.py`
 - **WSGI**: Aplicação Flask criada uma única vez no module load (`application = create_app()`)
 - **Segurança**: `SECRET_KEY` sem fallback inseguro — falha na inicialização se ausente
 - **Segurança**: Validação de `SECRET_KEY` mínima de 32 chars em produção
@@ -73,15 +125,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.0] - YYYY-MM-DD
+## [0.0.0-baseline] - 2025-11-24
 
-### Added
-- Versão inicial do backend Controle Financeiro Familiar
-- Autenticação JWT com Flask-JWT-Extended
-- CRUD completo para colaboradores, despesas, rendas, divisão mensal
-- Cálculo de resumo financeiro mensal
-- Integração com PostgreSQL (Supabase/Render) via psycopg2
-- Deploy configurado para Render
+Snapshot inicial do projeto antes da refatoração. Código legado com problemas de sintaxe, segurança e conexão que foram endereçados nas versões subsequentes.
 
 ---
 

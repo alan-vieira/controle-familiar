@@ -5,9 +5,27 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-15
 
-_Pronto para receber mudanças da próxima versão._
+### Security
+- Dependências atualizadas (CVEs): Werkzeug >=3.1.6, gunicorn >=23.0.0,
+  Flask-CORS >=5.0.0, Flask >=3.1.0.
+- Rate limiting em `/api/auth/login` e `/api/auth/register` (10 req/min).
+- Headers de segurança: X-Content-Type-Options, X-Frame-Options,
+  Referrer-Policy e HSTS (produção).
+
+### Fixed
+- Pool de conexões não é mais fechado a cada request: `close_pool()`
+  movido de `teardown_appcontext` para `atexit`.
+- Blacklist de tokens agora em tabela `token_blacklist` (PostgreSQL) —
+  funciona com múltiplos workers (antes: memória por processo).
+
+### Changed
+- Callback da blocklist registrado no `create_app()` (antes: `record_once`).
+- gunicorn: `--timeout 60 --preload` (cold start do Render free).
+
+### Added
+- `migrations/002_token_blacklist.sql`.
 
 ---
 

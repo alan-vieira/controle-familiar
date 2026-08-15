@@ -11,7 +11,8 @@ Security features:
 """
 import re
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
+from limiter import limiter
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import (
     create_access_token,
@@ -28,19 +29,22 @@ from psycopg2.extras import RealDictCursor
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__)
 
-# In-memory token blacklist (use Redis in production)
-_token_blacklist: set[str] = set()
+def is_token_blacklisted(jti: str) -> bool:
+    """Verifica revogação em tabela compartilhada entre workers."""
+    with get_db_cursor(commit=False) as cur:
+        cur.execute("SELECT 1 FROM token_blacklist WHERE jti = %s", (jti,))
+        return cur.fetchone() is not None
 
-
-def _add_to_blacklist(jti: str) -> None:
-    """Add token JTI to blacklist."""
-    _token_blacklist.add(jti)
-
-
-def _is_blacklisted(jti: str) -> bool:
-    """Check if token JTI is blacklisted."""
-    return jti in _token_blacklist
-
+def _add_to_blacklist(jti: str, expires_at=None) -> None:
+    """Revoga o token e aproveita para purgar revogações expiradas."""
+    with get_db_cursor() as cur:
+        cur.execute(
+            """INSERT INTO token_blacklist (jti, expires_at)
+               VALUES (%s, %s)
+               ON CONFLICT (jti) DO NOTHING""",
+            (jti, expires_at),
+        )
+        cur.execute("DELETE FROM token_blacklist WHERE expires_at < NOW()")
 
 def _validate_email(email: str) -> bool:
     """Basic email format validation."""
@@ -89,6 +93,7 @@ def _success_response(data: dict, status: int = 200) -> tuple:
 
 # ─── REGISTRO ─────────────────────────────────────────────
 @auth_bp.route('/auth/register', methods=['POST', 'OPTIONS'])
+@limiter.limit("10 per minute")
 def register():
     if request.method == 'OPTIONS':
         return '', 200
@@ -146,6 +151,7 @@ def register():
 
 # ─── LOGIN ───────────────────────────────────────────────
 @auth_bp.route('/auth/login', methods=['POST', 'OPTIONS'])
+@limiter.limit("10 per minute")
 def login():
     if request.method == 'OPTIONS':
         return '', 200
@@ -227,8 +233,11 @@ def auth_status():
 def logout():
     """Logout - adds token to blacklist."""
     try:
-        jti = get_jwt()['jti']
-        _add_to_blacklist(jti)
+        claims = get_jwt()
+        _add_to_blacklist(
+            claims['jti'],
+            datetime.fromtimestamp(claims['exp'], tz=timezone.utc),
+        )
         logger.info(f"Token revogado (jti={jti[:8]}...)")
         return _success_response({'message': 'Logout bem-sucedido'})
     except Exception as e:
@@ -262,16 +271,3 @@ def refresh():
     except Exception as e:
         logger.error(f"Erro ao renovar token: {e}")
         return _error_response('Erro interno', 'REFRESH_FAILED', 500)
-
-
-# ─── BLACKLIST CHECK (used by JWT) ───────────────────────
-@auth_bp.record_once
-def _load_jwt_blacklist_check(state):
-    """Register token blacklist callback with JWT manager."""
-    from flask_jwt_extended import JWTManager
-    jwt = JWTManager(state.app)
-
-    @jwt.token_in_blocklist_loader
-    def check_if_token_revoked(jwt_header, jwt_payload):
-        jti = jwt_payload['jti']
-        return _is_blacklisted(jti)

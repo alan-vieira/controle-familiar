@@ -10,6 +10,7 @@ Production-ready Flask application with:
 - Global error handling
 - Health check endpoints
 """
+import atexit
 import os
 import logging
 from flask import Flask, jsonify, request
@@ -26,6 +27,9 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+from routes.auth import is_token_blacklisted
+from limiter import limiter
 
 # Import blueprints
 from routes.auth import auth_bp
@@ -49,6 +53,26 @@ def create_app(config_class=None) -> Flask:
 
     # Initialize extensions
     jwt = JWTManager(app)
+    
+    # ── Headers de segurança ─────────────────────────────────────
+    @app.after_request
+    def add_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        if not getattr(config_class, 'DEBUG', False):
+            response.headers['Strict-Transport-Security'] = (
+                'max-age=31536000; includeSubDomains'
+            )
+        return response
+
+    # ── Blocklist de tokens (logout) — registrada na factory ─────
+    @jwt.token_in_blocklist_loader
+    def check_if_token_revoked(jwt_header, jwt_payload):
+        return is_token_blacklisted(jwt_payload['jti'])
+
+    # ── Rate limiting ─────────────────────────────────────────────
+    limiter.init_app(app)
 
     # CORS Configuration - from environment variable
     cors_origins = getattr(config_class, 'CORS_ORIGINS', [])
@@ -120,7 +144,7 @@ def create_app(config_class=None) -> Flask:
         return jsonify({
             'status': 'healthy',
             'message': 'Controle Familiar API',
-            'version': '0.1.0'
+            'version': '0.3.0'
         })
 
     @app.route('/health')
@@ -170,13 +194,8 @@ def create_app(config_class=None) -> Flask:
 application = create_app()
 app = application  # Alias for compatibility
 
-
-# Teardown: close pool on app shutdown
-@application.teardown_appcontext
-def shutdown_pool(exception=None):
-    if exception:
-        logger.error(f"App context teardown with exception: {exception}")
-    close_pool()
+# Fecha o pool APENAS no shutdown do processo (nunca por request)
+atexit.register(close_pool)
 
 
 # For local development only - not used in production

@@ -7,11 +7,12 @@ Security features:
 - Input validation (email, username, password strength)
 - JWT token generation with claims
 - Standardized error responses
-- Token blacklist for logout (in-memory, Redis recommended for production)
+- Token blacklist for logout (PostgreSQL-backed, works across workers)
 """
 import re
 import logging
 from datetime import timedelta, datetime, timezone
+
 from limiter import limiter
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import (
@@ -19,7 +20,6 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
     get_jwt,
-    verify_jwt_in_request
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -29,11 +29,13 @@ from psycopg2.extras import RealDictCursor
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__)
 
+
 def is_token_blacklisted(jti: str) -> bool:
     """Verifica revogação em tabela compartilhada entre workers."""
     with get_db_cursor(commit=False) as cur:
         cur.execute("SELECT 1 FROM token_blacklist WHERE jti = %s", (jti,))
         return cur.fetchone() is not None
+
 
 def _add_to_blacklist(jti: str, expires_at=None) -> None:
     """Revoga o token e aproveita para purgar revogações expiradas."""
@@ -45,6 +47,7 @@ def _add_to_blacklist(jti: str, expires_at=None) -> None:
             (jti, expires_at),
         )
         cur.execute("DELETE FROM token_blacklist WHERE expires_at < NOW()")
+
 
 def _validate_email(email: str) -> bool:
     """Basic email format validation."""
@@ -133,7 +136,7 @@ def register():
             """, (username, email if email else None, password_hash))
             user_id = cur.fetchone()['id']
 
-        logger.info(f"Usuário registrado: {username} (id={user_id})")
+        logger.info("Usuário registrado: %s (id=%s)", username, user_id)
         return _success_response({
             'message': 'Usuário criado com sucesso',
             'user_id': user_id
@@ -146,7 +149,7 @@ def register():
             return _error_response('Username já existe', 'USERNAME_EXISTS', 409)
         elif 'email' in error_msg:
             return _error_response('E-mail já cadastrado', 'EMAIL_EXISTS', 409)
-        logger.error(f"Erro ao registrar usuário: {e}")
+        logger.error("Erro ao registrar usuário: %s", e)
         return _error_response('Erro interno ao criar conta', 'REGISTRATION_FAILED', 500)
 
 
@@ -154,6 +157,7 @@ def register():
 @auth_bp.route('/auth/login', methods=['POST', 'OPTIONS'])
 @limiter.limit("10 per minute")
 def login():
+    """Autentica usuário e retorna access_token + dados básicos."""
     if request.method == 'OPTIONS':
         return '', 200
 
@@ -170,32 +174,37 @@ def login():
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM usuario WHERE username = %s AND ativo = true", (username,))
+                cur.execute(
+                    "SELECT * FROM usuario WHERE username = %s AND ativo = true",
+                    (username,),
+                )
                 user = cur.fetchone()
 
         if not user or not check_password_hash(user['password_hash'], password):
-            logger.warning(f"Tentativa de login falhada para: {username}")
+            logger.warning("Tentativa de login falhada para: %s", username)
             return _error_response('Credenciais inválidas', 'INVALID_CREDENTIALS', 401)
 
         # Create access token with user claims
         access_token = create_access_token(
             identity=str(user['id']),
             additional_claims={'username': user['username']},
-            expires_delta=timedelta(hours=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 1))
+            expires_delta=timedelta(
+                hours=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 1)
+            ),
         )
 
-        logger.info(f"Login bem-sucedido: {username} (id={user['id']})")
+        logger.info("Login bem-sucedido: %s (id=%s)", username, user['id'])
         return _success_response({
             'access_token': access_token,
             'user': {
                 'id': user['id'],
                 'username': user['username'],
-                'email': user['email']
-            }
+                'email': user['email'],
+            },
         })
 
     except Exception as e:
-        logger.error(f"Erro no login: {e}")
+        logger.error("Erro no login: %s", e)
         return _error_response('Erro interno no servidor', 'LOGIN_FAILED', 500)
 
 
@@ -208,23 +217,29 @@ def auth_status():
         current_user_id = get_jwt_identity()
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT id, username, email FROM usuario WHERE id = %s AND ativo = true", (current_user_id,))
+                cur.execute(
+                    "SELECT id, username, email FROM usuario "
+                    "WHERE id = %s AND ativo = true",
+                    (current_user_id,),
+                )
                 user = cur.fetchone()
 
         if not user:
-            return _error_response('Usuário não encontrado ou inativo', 'USER_NOT_FOUND', 401)
+            return _error_response(
+                'Usuário não encontrado ou inativo', 'USER_NOT_FOUND', 401
+            )
 
         return _success_response({
             'logged_in': True,
             'user': {
                 'id': user['id'],
                 'username': user['username'],
-                'email': user['email']
-            }
+                'email': user['email'],
+            },
         })
 
     except Exception as e:
-        logger.error(f"Erro ao verificar status: {e}")
+        logger.error("Erro ao verificar status: %s", e)
         return _error_response('Erro interno', 'STATUS_FAILED', 500)
 
 
@@ -235,14 +250,15 @@ def logout():
     """Logout - adds token to blacklist."""
     try:
         claims = get_jwt()
+        jti = claims['jti']
         _add_to_blacklist(
-            claims['jti'],
+            jti,
             datetime.fromtimestamp(claims['exp'], tz=timezone.utc),
         )
-        logger.info(f"Token revogado (jti={jti[:8]}...)")
+        logger.info("Token revogado (jti=%s...)", jti[:8])
         return _success_response({'message': 'Logout bem-sucedido'})
     except Exception as e:
-        logger.error(f"Erro no logout: {e}")
+        logger.error("Erro no logout: %s", e)
         return _error_response('Erro interno', 'LOGOUT_FAILED', 500)
 
 
@@ -255,7 +271,10 @@ def refresh():
         current_user_id = get_jwt_identity()
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT username FROM usuario WHERE id = %s AND ativo = true", (current_user_id,))
+                cur.execute(
+                    "SELECT username FROM usuario WHERE id = %s AND ativo = true",
+                    (current_user_id,),
+                )
                 user = cur.fetchone()
 
         if not user:
@@ -264,11 +283,13 @@ def refresh():
         access_token = create_access_token(
             identity=str(current_user_id),
             additional_claims={'username': user['username']},
-            expires_delta=timedelta(hours=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 1))
+            expires_delta=timedelta(
+                hours=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 1)
+            ),
         )
 
         return _success_response({'access_token': access_token})
 
     except Exception as e:
-        logger.error(f"Erro ao renovar token: {e}")
+        logger.error("Erro ao renovar token: %s", e)
         return _error_response('Erro interno', 'REFRESH_FAILED', 500)

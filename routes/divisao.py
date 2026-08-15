@@ -4,23 +4,27 @@ Divisão Mensal routes - Protected with JWT authentication.
 
 All endpoints require valid JWT token.
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
-from connection import get_db_connection, get_db_cursor
-from psycopg2.extras import RealDictCursor
-from datetime import date
 import re
 import logging
+from datetime import date
+
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
+from psycopg2.extras import RealDictCursor
+
+from connection import get_db_connection, get_db_cursor
 
 logger = logging.getLogger(__name__)
 divisao_bp = Blueprint('divisao', __name__)
 
 
 def _error_response(message: str, code: str, status: int = 400) -> tuple:
+    """Resposta de erro padronizada."""
     return jsonify({'error': message, 'code': code}), status
 
 
 def _success_response(data: dict, status: int = 200) -> tuple:
+    """Resposta de sucesso padronizada."""
     return jsonify(data), status
 
 
@@ -34,14 +38,16 @@ def validar_mes_ano(mes_ano: str) -> bool:
 def obter_status_divisao(mes_ano: str):
     """Retorna status de pagamento e data de acerto do mês."""
     if not validar_mes_ano(mes_ano):
-        return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
+        return _error_response(
+            "Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH'
+        )
 
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     "SELECT paga, data_acerto FROM divisao_mensal WHERE mes_ano = %s",
-                    (mes_ano,)
+                    (mes_ano,),
                 )
                 row = cur.fetchone()
 
@@ -49,17 +55,21 @@ def obter_status_divisao(mes_ano: str):
                     return _success_response({
                         "mes_ano": mes_ano,
                         "paga": row['paga'],
-                        "data_acerto": row['data_acerto'].isoformat() if row['data_acerto'] else None
+                        "data_acerto": (
+                            row['data_acerto'].isoformat()
+                            if row['data_acerto'] else None
+                        ),
                     })
-                else:
-                    return _success_response({
-                        "mes_ano": mes_ano,
-                        "paga": False,
-                        "data_acerto": None
-                    })
+                return _success_response({
+                    "mes_ano": mes_ano,
+                    "paga": False,
+                    "data_acerto": None,
+                })
     except Exception as e:
-        logger.error(f"Erro em obter_status_divisao: {e}")
-        return _error_response("Erro interno ao buscar status da divisão", 'FETCH_FAILED', 500)
+        logger.error("Erro em obter_status_divisao: %s", e)
+        return _error_response(
+            "Erro interno ao buscar status da divisão", 'FETCH_FAILED', 500
+        )
 
 
 @divisao_bp.route('/divisao/<mes_ano>/marcar-pago', methods=['POST'])
@@ -67,7 +77,9 @@ def obter_status_divisao(mes_ano: str):
 def marcar_divisao_como_paga(mes_ano: str):
     """Marca a divisão do mês como paga (upsert) com data de acerto opcional."""
     if not validar_mes_ano(mes_ano):
-        return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
+        return _error_response(
+            "Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH'
+        )
 
     data = request.get_json() or {}
     data_acerto = data.get('data_acerto')
@@ -76,29 +88,37 @@ def marcar_divisao_como_paga(mes_ano: str):
         try:
             date.fromisoformat(data_acerto)
         except ValueError:
-            return _error_response("data_acerto deve estar no formato YYYY-MM-DD", 'INVALID_DATE')
+            return _error_response(
+                "data_acerto deve estar no formato YYYY-MM-DD", 'INVALID_DATE'
+            )
 
     try:
+        # get_db_cursor comita automaticamente no sucesso
         with get_db_cursor() as cur:
-            cur.execute("""
-                INSERT INTO divisao_mensal (mes_ano, paga, data_acerto)
-                VALUES (%s, true, %s)
-                ON CONFLICT (mes_ano)
-                DO UPDATE SET paga = true, data_acerto = EXCLUDED.data_acerto
-                RETURNING mes_ano, paga, data_acerto
-            """, (mes_ano, data_acerto))
-            conn.commit()
+            cur.execute(
+                """INSERT INTO divisao_mensal (mes_ano, paga, data_acerto)
+                   VALUES (%s, true, %s)
+                   ON CONFLICT (mes_ano)
+                   DO UPDATE SET paga = true, data_acerto = EXCLUDED.data_acerto
+                   RETURNING mes_ano, paga, data_acerto""",
+                (mes_ano, data_acerto),
+            )
             result = cur.fetchone()
 
             return _success_response({
                 "mes_ano": result['mes_ano'],
                 "paga": result['paga'],
-                "data_acerto": result['data_acerto'].isoformat() if result['data_acerto'] else None
+                "data_acerto": (
+                    result['data_acerto'].isoformat()
+                    if result['data_acerto'] else None
+                ),
             })
 
     except Exception as e:
-        logger.error(f"Erro ao marcar divisão como paga: {e}")
-        return _error_response("Erro interno ao atualizar divisão", 'OPERATION_FAILED', 500)
+        logger.error("Erro ao marcar divisão como paga: %s", e)
+        return _error_response(
+            "Erro interno ao atualizar divisão", 'OPERATION_FAILED', 500
+        )
 
 
 @divisao_bp.route('/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
@@ -106,32 +126,38 @@ def marcar_divisao_como_paga(mes_ano: str):
 def desmarcar_divisao_como_paga(mes_ano: str):
     """Desmarca a divisão do mês como paga (cria registro se inexistente)."""
     if not validar_mes_ano(mes_ano):
-        return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
+        return _error_response(
+            "Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH'
+        )
 
     try:
+        # get_db_cursor comita automaticamente no sucesso
         with get_db_cursor() as cur:
-            cur.execute("""
-                UPDATE divisao_mensal
-                SET paga = false, data_acerto = NULL
-                WHERE mes_ano = %s
-                RETURNING mes_ano, paga, data_acerto
-            """, (mes_ano,))
+            cur.execute(
+                """UPDATE divisao_mensal
+                   SET paga = false, data_acerto = NULL
+                   WHERE mes_ano = %s
+                   RETURNING mes_ano, paga, data_acerto""",
+                (mes_ano,),
+            )
 
             if cur.rowcount == 0:
-                cur.execute("""
-                    INSERT INTO divisao_mensal (mes_ano, paga)
-                    VALUES (%s, false)
-                    RETURNING mes_ano, paga, data_acerto
-                """, (mes_ano,))
+                cur.execute(
+                    """INSERT INTO divisao_mensal (mes_ano, paga)
+                       VALUES (%s, false)
+                       RETURNING mes_ano, paga, data_acerto""",
+                    (mes_ano,),
+                )
 
-            conn.commit()
             result = cur.fetchone()
             return _success_response({
                 "mes_ano": result['mes_ano'],
                 "paga": result['paga'],
-                "data_acerto": result['data_acerto']
+                "data_acerto": result['data_acerto'],
             })
 
     except Exception as e:
-        logger.error(f"Erro ao desmarcar divisão como paga: {e}")
-        return _error_response("Erro interno ao atualizar divisão", 'OPERATION_FAILED', 500)
+        logger.error("Erro ao desmarcar divisão como paga: %s", e)
+        return _error_response(
+            "Erro interno ao atualizar divisão", 'OPERATION_FAILED', 500
+        )

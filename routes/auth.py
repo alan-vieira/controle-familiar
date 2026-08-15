@@ -95,6 +95,7 @@ def _success_response(data: dict, status: int = 200) -> tuple:
 @auth_bp.route('/auth/register', methods=['POST', 'OPTIONS'])
 @limiter.limit("10 per minute")
 def register():
+    """Registra novo usuário (username, e-mail opcional, senha forte)."""
     if request.method == 'OPTIONS':
         return '', 200
 

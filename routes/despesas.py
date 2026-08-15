@@ -35,6 +35,7 @@ def _success_response(data: dict, status: int = 200):
 
 
 def normalizar_tipo_pg(tipo: str) -> str:
+    """Normaliza variações de tipo de pagamento para o enum do banco."""
     t = tipo.lower().strip()
     if 'credito' in t or 'cartao' in t or 'cartão' in t:
         return 'credito'

@@ -5,3 +5,4 @@ venv/
 .venv/
 .vscode/
 scripts/generate_admin_sql.py
+scripts/fix_whitespace.py

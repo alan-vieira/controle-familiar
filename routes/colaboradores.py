@@ -16,11 +16,13 @@ colaboradores_bp = Blueprint('colaboradores', __name__)
 
 
 def _error_response(message: str, code: str, status: int = 400):
+    """Resposta de erro padronizada (JSON com DecimalEncoder)."""
     from utils.json_utils import json_response
     return json_response({'error': message, 'code': code}, status)
 
 
 def _success_response(data: dict, status: int = 200):
+    """Resposta de sucesso padronizada (JSON com DecimalEncoder)."""
     from utils.json_utils import json_response
     return json_response(data, status)
 

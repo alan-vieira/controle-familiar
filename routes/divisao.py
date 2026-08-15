@@ -25,12 +25,14 @@ def _success_response(data: dict, status: int = 200) -> tuple:
 
 
 def validar_mes_ano(mes_ano: str) -> bool:
+    """Valida o formato YYYY-MM."""
     return bool(re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano))
 
 
 @divisao_bp.route('/divisao/<mes_ano>', methods=['GET'])
 @jwt_required()
 def obter_status_divisao(mes_ano: str):
+    """Retorna status de pagamento e data de acerto do mês."""
     if not validar_mes_ano(mes_ano):
         return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
 
@@ -63,6 +65,7 @@ def obter_status_divisao(mes_ano: str):
 @divisao_bp.route('/divisao/<mes_ano>/marcar-pago', methods=['POST'])
 @jwt_required()
 def marcar_divisao_como_paga(mes_ano: str):
+    """Marca a divisão do mês como paga (upsert) com data de acerto opcional."""
     if not validar_mes_ano(mes_ano):
         return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
 
@@ -101,6 +104,7 @@ def marcar_divisao_como_paga(mes_ano: str):
 @divisao_bp.route('/divisao/<mes_ano>/desmarcar-pago', methods=['POST'])
 @jwt_required()
 def desmarcar_divisao_como_paga(mes_ano: str):
+    """Desmarca a divisão do mês como paga (cria registro se inexistente)."""
     if not validar_mes_ano(mes_ano):
         return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
 

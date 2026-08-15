@@ -1,0 +1,21 @@
+[tool.pylint.main]
+py-version = "3.10"
+ignore = [".venv", "venv", "migrations", "dist"]
+
+[tool.pylint."messages control"]
+disable = [
+    "duplicate-code",            # helpers _error/_success repetem por blueprint
+    "too-few-public-methods",    # classes de config / dataclasses
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-return-statements",# handlers de rota retornam em vários ramos
+    "broad-exception-caught",    # rotas já fazem log + resposta padronizada
+]
+
+[tool.pylint.basic]
+good-names = ["id", "cur", "conn", "e", "jwt", "app", "db", "i", "r", "t"]
+const-rgx = "[a-zA-Z_][a-zA-Z0-9_]*$"   # aceita auth_bp, despesas_bp, CENT
+
+[tool.pylint.format]
+max-line-length = 100

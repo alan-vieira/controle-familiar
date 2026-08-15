@@ -17,11 +17,13 @@ rendas_bp = Blueprint('rendas', __name__)
 
 
 def _error_response(message: str, code: str, status: int = 400):
+    """Resposta de erro padronizada (JSON com DecimalEncoder)."""
     from utils.json_utils import json_response
     return json_response({'error': message, 'code': code}, status)
 
 
 def _success_response(data: dict, status: int = 200):
+    """Resposta de sucesso padronizada (JSON com DecimalEncoder)."""
     from utils.json_utils import json_response
     return json_response(data, status)
 
@@ -51,6 +53,7 @@ def validar_renda_data(data: dict) -> list:
 @rendas_bp.route('/rendas', methods=['GET', 'POST'])
 @jwt_required()
 def rendas():
+    """Lista rendas mensais, opcionalmente filtradas por mês."""
     try:
         if request.method == 'GET':
             mes = request.args.get('mes')
@@ -106,6 +109,7 @@ def rendas():
 @rendas_bp.route('/rendas/<int:id>', methods=['PUT', 'DELETE'])
 @jwt_required()
 def renda_id(id: int):
+    """Atualiza ou exclui uma renda pelo ID."""
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

@@ -1,3 +1,4 @@
+"""Utilitários de data: cálculo do mês vigente por regra de fechamento."""
 from datetime import date
 
 def calcular_mes_vigente(data_compra: date, tipo_pg: str, dia_limite: int) -> str:

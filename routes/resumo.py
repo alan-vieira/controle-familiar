@@ -40,6 +40,7 @@ def _success_response(data: dict, status: int = 200):
 @resumo_bp.route('/resumo/<mes_ano>')
 @jwt_required()
 def resumo(mes_ano: str):
+    """Calcula o resumo mensal: totais, divisão proporcional e saldos."""
     if not re.match(r'^\d{4}-(0[1-9]|1[0-2])$', mes_ano):
         return _error_response("Formato de mês inválido. Use YYYY-MM.", 'INVALID_MONTH')
 

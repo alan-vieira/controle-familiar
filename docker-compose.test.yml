@@ -1,0 +1,22 @@
+# docker-compose.test.yml
+# Container PostgreSQL isolado apenas para testes
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:15.6-alpine  # Mesma versão base do Supabase
+    container_name: controle_familiar_test_db
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: controle_familiar_test
+    ports:
+      - "5433:5432"  # Porta 5433 para não conflitar com Postgres local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d controle_familiar_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    tmpfs:
+      # Usa RAM para velocidade máxima (dados são descartados)
+      - /var/lib/postgresql/data:rw,noexec,nosuid

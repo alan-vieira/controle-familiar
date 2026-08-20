@@ -5,6 +5,26 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.0] - 2026-08-21
+
+### Added
+- **Suite de Testes Abrangente**: 156 testes automatizados (pytest) cobrindo autenticação, CRUD, validações de negócio, handlers de erro e edge cases.
+- **CI/CD com GitHub Actions**: Pipeline automatizado (`.github/workflows/tests.yml`) que executa testes a cada push/PR.
+- **Gate de Qualidade**: Configuração `--cov-fail-under=85` no CI para bloquear merges que reduzam a cobertura de código.
+- **Ambiente de Teste Isolado**: Configuração Docker (`docker-compose.test.yml`) com PostgreSQL 15.6-alpine idêntico ao de produção.
+- **Scripts de Automação**: Scripts PowerShell (`scripts/check-coverage.ps1`, `run-tests.ps1`, etc.) para setup, teardown e execução de testes com relatório de cobertura.
+- **Badges de Status**: Adicionados badges de "Tests & Coverage" e "Coverage 85%" no `README.md`.
+
+### Changed
+- Ajuste nos fixtures de teste para compatibilidade total com `psycopg2.extras.RealDictCursor` (acesso via chaves de dicionário em vez de índices).
+- Refinamento dos testes de handlers JWT para validar corretamente os campos `error` e `msg` nas respostas da API.
+
+### Security
+- Garantia de que exceções não tratadas (500) retornam JSON genérico sem vazar stack traces em ambiente de produção.
+- Proteção contra regressão de lógica financeira (precisão Decimal) e regras de negócio (integridade referencial) via testes automatizados.
+
+---
+
 ## [0.3.0] - 2026-08-15
 
 ### Security

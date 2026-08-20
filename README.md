@@ -1,5 +1,7 @@
 # Controle Financeiro Familiar — API (Backend)
 
+[![Tests & Coverage](https://github.com/alan-vieira/controle-familiar/actions/workflows/tests.yml/badge.svg)](https://github.com/alan-vieira/controle-familiar/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/badge/Coverage-85%25-brightgreen)](https://github.com/alan-vieira/controle-familiar/actions)
 [![Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?logo=render)](https://controle-familiar.onrender.com)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1%2B-black?logo=flask)](https://flask.palletsprojects.com)

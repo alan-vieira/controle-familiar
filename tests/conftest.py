@@ -7,6 +7,8 @@ import pytest
 import uuid
 from datetime import date
 
+# Desabilitar rate limiting ANTES do app ser criado
+os.environ.setdefault("RATELIMIT_ENABLED", "false")
 os.environ.setdefault("FLASK_ENV", "testing")
 os.environ.setdefault(
     "DATABASE_URL",

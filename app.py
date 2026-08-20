@@ -72,7 +72,10 @@ def create_app(config_class=None) -> Flask:
         return is_token_blacklisted(jwt_payload['jti'])
 
     # ── Rate limiting ─────────────────────────────────────────────
-    limiter.init_app(app)
+        if not getattr(config_class, 'RATELIMIT_ENABLED', True):
+            logger.info("Rate limiting disabled (RATELIMIT_ENABLED=False)")
+        else:
+            limiter.init_app(app)
 
     # CORS Configuration - from environment variable
     cors_origins = getattr(config_class, 'CORS_ORIGINS', [])

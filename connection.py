@@ -294,6 +294,19 @@ def init_db(force: bool = False) -> bool:
                 SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM configuracao_fechamento)
             ''')
 
+            # token_blacklist table for JWT revocation
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS token_blacklist (
+                    jti VARCHAR(36) PRIMARY KEY,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+            ''')
+            # Index for faster cleanup of expired tokens
+            cur.execute('''
+                CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires_at 
+                ON token_blacklist (expires_at)
+            ''')
+
         return True
         
     except Exception as e:

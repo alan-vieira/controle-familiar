@@ -101,6 +101,9 @@ class TestingConfig(Config):
     DATABASE_URL: str = os.getenv('TEST_DATABASE_URL', _get_required_env('DATABASE_URL'))
     DATABASE_POOL_MAX: int = 2
 
+    # Disable rate limiting in tests
+    RATELIMIT_ENABLED: bool = False
+
 
 def get_config() -> type[Config]:
     """Return the appropriate config class based on FLASK_ENV."""

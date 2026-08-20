@@ -5,20 +5,23 @@ as strings to preserve precision in financial calculations.
 """
 import json
 from decimal import Decimal
+from datetime import datetime, date
 
 
 class DecimalEncoder(json.JSONEncoder):
     """JSON Encoder that serializes Decimal as string to preserve precision."""
-    
+
     def default(self, obj):
         if isinstance(obj, Decimal):
             return str(obj)
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
         return super().default(obj)
 
 
 def json_response(data, status=200):
     """Helper to return Flask response with Decimal serialization support.
-    
+
     Args:
         data: Data to serialize (can contain Decimal values)
         status: HTTP status code

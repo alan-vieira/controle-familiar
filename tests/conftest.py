@@ -24,6 +24,7 @@ def app():
     app.config.update({
         "TESTING": True,
         "JWT_ACCESS_TOKEN_EXPIRES_HOURS": 1,
+        "RATELIMIT_ENABLED": False,
     })
     yield app
 

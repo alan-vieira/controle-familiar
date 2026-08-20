@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1%2B-black?logo=flask)](https://flask.palletsprojects.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql)](https://postgresql.org)
-[![Release](https://img.shields.io/badge/Release-v0.3.0-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.3.0)
+[![Release](https://img.shields.io/badge/Release-v0.4.0-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.4.0)
 
 API RESTful feita em **Python + Flask** para o projeto **Controle Financeiro Familiar**.
 Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com autenticação JWT stateless e integração ao banco de dados **PostgreSQL** (Supabase/Render).
@@ -26,7 +26,7 @@ Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com aute
   - **Rendas mensais** (por colaborador)
   - **Divisão mensal** (status de acerto)
 - Cálculo do **resumo financeiro mensal** (total de rendas, despesas e saldo por colaborador)
-- Formatação de valores em **BRL** (R$) na apresentação
+- Formatação de valores em **BRL** (R$) na apresentação com precisão decimal garantida
 
 ---
 
@@ -41,7 +41,7 @@ Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com aute
   - `despesa` — lançamentos de despesas
   - `renda_mensal` — rendas por colaborador/mês
   - `divisao_mensal` — status de acerto mensal
-  - `token_blacklist` — revogação de tokens JWT (multi-worker)
+  - `token_blacklist` — revogação de tokens JWT (funciona multi-worker)
 
 > ⚠️ O frontend **nunca acessa o banco diretamente**. Toda comunicação passa por esta API.
 
@@ -211,6 +211,37 @@ Acesse: http://localhost:5000
 
 ---
 
+## 🧪 Testes Automatizados
+
+O projeto possui uma suite robusta de testes automatizados (**156 testes**) com cobertura de código superior a **85%**, garantida por um pipeline de CI/CD no GitHub Actions que bloqueia merges que reduzam a qualidade.
+
+### Rodando os Testes Localmente
+
+A maneira mais fácil e segura de rodar os testes é usando o `Makefile` e o Docker (que sobe um banco PostgreSQL 15.6 isolado, idêntico ao de produção, sem poluir seu ambiente de desenvolvimento):
+
+```bash
+# 1. Subir o banco de dados de teste e rodar as migrations
+make test-setup
+
+# 2. Rodar todos os testes com relatório de cobertura no terminal e HTML
+make test-cov
+
+# 3. (Opcional) Derrubar o banco de teste após finalizar
+make test-teardown
+```
+
+Ou, para rodar tudo em um único comando (setup + testes + teardown):
+
+```bash
+./scripts/run-tests.ps1  # Windows (PowerShell)
+# ou
+./scripts/run-tests.sh   # Linux / macOS / Git Bash
+```
+
+📊 **Relatório de Cobertura**: Após rodar `make test-cov`, abra o arquivo `htmlcov/index.html` no seu navegador para ver exatamente quais linhas de código estão cobertas pelos testes.
+
+---
+
 ## 🌐 Deploy no Render
 
 ### 1. Vincule este repositório ao seu Render Dashboard
@@ -267,19 +298,6 @@ Após deploy, execute estes scripts **em ordem** no SQL Editor do Supabase ou vi
 |---|---|
 | `migrations/001_add_indexes.sql` | Índices compostos em `despesa(colaborador_id, mes_vigente)`, `despesa(mes_vigente)`, `renda_mensal(mes_ano)`, `renda_mensal(colaborador_id, mes_ano)` |
 | `migrations/002_token_blacklist.sql` | Tabela `token_blacklist(jti PK, revoked_at, expires_at)` + índice em `expires_at` para purga automática |
-
----
-
-## 🧪 Testes
-
-```bash
-# Configurar variáveis de teste
-export FLASK_ENV=testing
-export TEST_DATABASE_URL=postgresql://...
-
-# Executar testes (quando implementados)
-pytest tests/
-```
 
 ---
 

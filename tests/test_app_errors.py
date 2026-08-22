@@ -17,11 +17,12 @@ class TestGenericErrorHandlers:
             "username": f"err500_{unique}",
             "password": "SenhaForte@123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": f"err500_{unique}",
             "password": "SenhaForte@123",
         })
-        token = login_resp.get_json()["access_token"]
+        cookie = client.get_cookie("access_token")
+        token = cookie.value if hasattr(cookie, 'value') else cookie
         
         # Testa endpoint que não existe (404 não 500, mas testa handler)
         response = client.get("/api/endpoint_inexistente", headers={"Authorization": f"Bearer {token}"})
@@ -36,11 +37,12 @@ class TestGenericErrorHandlers:
             "username": f"err500b_{unique}",
             "password": "SenhaForte@123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": f"err500b_{unique}",
             "password": "SenhaForte@123",
         })
-        token = login_resp.get_json()["access_token"]
+        cookie = client.get_cookie("access_token")
+        token = cookie.value if hasattr(cookie, 'value') else cookie
         
         # Testa método não permitido (405)
         response = client.post("/health", headers={"Authorization": f"Bearer {token}"})

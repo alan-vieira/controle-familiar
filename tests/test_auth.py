@@ -36,7 +36,8 @@ class TestLogin:
             "password": "SenhaForte@123",
         })
         assert response.status_code == 200
-        assert "access_token" in response.get_json()
+        assert client.get_cookie("access_token"), "Token não definido no cookie de resposta"
+        assert "user" in response.get_json()
 
 
 class TestLogoutEBlacklist:

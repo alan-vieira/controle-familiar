@@ -49,12 +49,13 @@ class TestRefreshToken:
             "username": username,
             "password": "SenhaForte@123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": username,
             "password": "SenhaForte@123",
         })
         
-        access_token = login_resp.get_json()["access_token"]
+        cookie = client.get_cookie("access_token")
+        access_token = cookie.value if hasattr(cookie, 'value') else cookie
         
         # Tenta usar access token como refresh token
         response = client.post(
@@ -105,11 +106,12 @@ class TestExpiracaoToken:
             "username": username,
             "password": "SenhaForte@123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": username,
             "password": "SenhaForte@123",
         })
-        token = login_resp.get_json()["access_token"]
+        cookie = client.get_cookie("access_token")
+        token = cookie.value if hasattr(cookie, 'value') else cookie
         
         # Avança 2 horas no tempo (token expira em 1h)
         with freeze_time(datetime.now() + timedelta(hours=2)):

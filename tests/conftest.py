@@ -77,7 +77,7 @@ def client(app, db):
             yield client
 
 
-@pytest.fixture()
+@ pytest.fixture()
 def auth_headers(client):
     """Cria usuário único e retorna headers com JWT válido."""
     unique = uuid.uuid4().hex[:8]
@@ -97,7 +97,9 @@ def auth_headers(client):
         "password": password,
     })
     assert response.status_code == 200
-    token = response.get_json()["access_token"]
+    cookie = client.get_cookie("access_token")
+    assert cookie, "Token não encontrado nos cookies da resposta de login"
+    token = cookie.value if hasattr(cookie, 'value') else cookie
     return {"Authorization": f"Bearer {token}"}
 
 

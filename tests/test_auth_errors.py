@@ -20,11 +20,12 @@ class TestJWTErrorHandlersSpecific:
             "username": username,
             "password": "SenhaForte@123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": username,
             "password": "SenhaForte@123",
         })
-        token = login_resp.get_json()["access_token"]
+        cookie = client.get_cookie("access_token")
+        token = cookie.value if hasattr(cookie, 'value') else cookie
         
         with freeze_time(datetime.now() + timedelta(hours=2)):
             response = client.get(

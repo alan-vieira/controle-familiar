@@ -208,6 +208,7 @@ def login():
             secure=True,
             samesite='None',
             partitioned=True,
+            domain='.onrender.com',
             max_age=3600,
             path='/'
         )
@@ -275,6 +276,7 @@ def logout():
             secure=True,
             samesite='None',
             partitioned=True,
+            domain='.onrender.com',
             path='/'
         )
         return response
@@ -317,6 +319,7 @@ def refresh():
             secure=True,
             samesite='None',
             partitioned=True,
+            domain='.onrender.com',
             max_age=3600,
             path='/'
         )

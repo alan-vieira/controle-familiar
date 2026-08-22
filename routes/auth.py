@@ -210,7 +210,8 @@ def login():
             max_age=3600,
             path='/'
         )
-
+        return response
+    
     except Exception as e:
         logger.error("Erro no login: %s", e)
         return _error_response('Erro interno no servidor', 'LOGIN_FAILED', 500)
@@ -275,6 +276,7 @@ def logout():
             path='/'
         )
         return response
+    
     except Exception as e:
         logger.error("Erro no logout: %s", e)
         return _error_response('Erro interno', 'LOGOUT_FAILED', 500)

@@ -14,7 +14,7 @@ import logging
 from datetime import timedelta, datetime, timezone
 
 from limiter import limiter
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, make_response
 from flask_jwt_extended import (
     create_access_token,
     jwt_required,
@@ -194,14 +194,22 @@ def login():
         )
 
         logger.info("Login bem-sucedido: %s (id=%s)", username, user['id'])
-        return _success_response({
-            'access_token': access_token,
+        response = make_response(_success_response({
             'user': {
                 'id': user['id'],
                 'username': user['username'],
                 'email': user['email'],
             },
-        })
+        }))
+        response.set_cookie(
+            'access_token',
+            access_token,
+            httponly=True,
+            secure=True,
+            samesite='None',
+            max_age=3600
+        )
+        return response
 
     except Exception as e:
         logger.error("Erro no login: %s", e)
@@ -256,7 +264,17 @@ def logout():
             datetime.fromtimestamp(claims['exp'], tz=timezone.utc),
         )
         logger.info("Token revogado (jti=%s...)", jti[:8])
-        return _success_response({'message': 'Logout bem-sucedido'})
+        response = make_response(_success_response({'message': 'Logout bem-sucedido'}))
+        response.set_cookie(
+            'access_token',
+            '',
+            expires=0,
+            httponly=True,
+            secure=True,
+            samesite='None',
+            path='/'
+        )
+        return response
     except Exception as e:
         logger.error("Erro no logout: %s", e)
         return _error_response('Erro interno', 'LOGOUT_FAILED', 500)
@@ -288,7 +306,16 @@ def refresh():
             ),
         )
 
-        return _success_response({'access_token': access_token})
+        response = make_response(_success_response({}))
+        response.set_cookie(
+            'access_token',
+            access_token,
+            httponly=True,
+            secure=True,
+            samesite='None',
+            max_age=3600
+        )
+        return response
 
     except Exception as e:
         logger.error("Erro ao renovar token: %s", e)

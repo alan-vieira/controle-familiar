@@ -5,6 +5,24 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.1] - 2026-08-22
+
+### 🔒 Segurança (Resolução da Tarefa P1 do Roadmap)
+- **Migração para Cookies HttpOnly**: Os tokens JWT de acesso não são mais armazenados ou lidos via `localStorage`. Agora são gerenciados pelo navegador como cookies `HttpOnly`, `Secure` e `SameSite=None`, eliminando a vulnerabilidade a ataques XSS.
+- **Refresh Token Automático**: Implementado interceptor no cliente HTTP (Axios) que detecta erros `401 Unauthorized`, chama silenciosamente `/api/auth/refresh` e reenvia a requisição original, melhorando a experiência do usuário.
+- **Logout Blindado**: O endpoint `/api/auth/logout` agora adiciona o `jti` do token à tabela `token_blacklist` no PostgreSQL **e** instrui o navegador a excluir o cookie imediatamente (`expires=0`).
+
+### 🛠️ Backend (Flask)
+- Atualizado `routes/auth.py` para usar `make_response` e `response.set_cookie()` nas rotas de login, refresh e logout.
+- Configurado `JWT_TOKEN_LOCATION = ["cookies", "headers"]` para permitir transição suave.
+
+### 💻 Frontend (Vite/React)
+- Adicionado `withCredentials: true` na instância do Axios.
+- Removida toda a dependência de `localStorage` para estado de autenticação.
+- O estado de sessão agora é validado via chamada à API (`/api/auth/status`) e eventos de expiração.
+
+---
+
 ## [0.4.0] - 2026-08-21
 
 ### Added

@@ -6,20 +6,20 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1%2B-black?logo=flask)](https://flask.palletsprojects.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql)](https://postgresql.org)
-[![Release](https://img.shields.io/badge/Release-v0.4.0-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.4.0)
+[![Release](https://img.shields.io/badge/Release-v0.4.1-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.4.1)
 
 API RESTful feita em **Python + Flask** para o projeto **Controle Financeiro Familiar**.
-Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com autenticação JWT stateless e integração ao banco de dados **PostgreSQL** (Supabase/Render).
+Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com autenticação JWT via **Cookies HttpOnly** e integração ao banco de dados **PostgreSQL** (Supabase/Render).
 
-> 🌐 **URL de produção**: https://controle-familiar.onrender.com
-> 📊 **Frontend**: https://github.com/alan-vieira/controle-familiar-frontend
-> 🎯 **Projeto completo**: Sistema para gestão colaborativa de finanças domésticas
+- 🌐 **URL de produção**: https://controle-familiar.onrender.com
+- 📊 **Frontend**: https://github.com/alan-vieira/controle-familiar-frontend
+- 🎯 **Projeto completo**: Sistema para gestão colaborativa de finanças domésticas
 
 ---
 
 ## 📦 Funcionalidades
 
-- Autenticação de usuários (registro, login/logout/refresh com JWT)
+- Autenticação segura de usuários (registro, login/logout/refresh com JWT em **Cookies HttpOnly**)
 - CRUD de:
   - **Colaboradores** (membros da família)
   - **Despesas** (com data, descrição, valor, categoria, tipo de pagamento e colaborador)
@@ -54,9 +54,9 @@ Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com aute
 | **Python** | 3.10+ | Obrigatório |
 | **Flask** | 3.1+ | Factory pattern, WSGI entry point |
 | **PostgreSQL Driver** | psycopg2-binary 2.9+ | Pool thread-safe |
-| **Auth** | Flask-JWT-Extended 4.7+ | Stateless JWT, refresh tokens |
+| **Auth** | Flask-JWT-Extended 4.7+ | **JWT via Cookies HttpOnly** + Refresh Tokens |
 | **Rate Limiting** | Flask-Limiter 4.1+ | Memória (free tier) / Redis opcional |
-| **CORS** | flask-cors 6.0+ | Origens via variável de ambiente |
+| **CORS** | flask-cors 6.0+ | Origens via variável de ambiente (`supports_credentials=True`) |
 | **Security** | Werkzeug 3.1+ | PBKDF2 password hashing |
 | **Deploy** | gunicorn 26+ | `--preload --timeout 60` |
 | **Config** | python-dotenv 1.2+ | Fail-fast validation |
@@ -137,17 +137,17 @@ Acesse: http://localhost:5000
 ## 🌐 Endpoints da API
 
 **Base path**: `/api`  
-**Autenticação**: Header `Authorization: Bearer <access_token>` (JWT)
+**Autenticação**: **Cookie HttpOnly** (`access_token`) enviado automaticamente pelo navegador (com suporte a Header `Authorization: Bearer ***` para transição).
 
 ### Autenticação (`/api/auth`)
 
 | Método | Rota | Descrição | Auth | Rate Limit |
 |---|---|---|---|---|
 | POST | `/api/auth/register` | Criar conta (username, email opcional, senha forte) | ❌ | 10/min |
-| POST | `/api/auth/login` | Login (retorna access_token) | ❌ | 10/min |
+| POST | `/api/auth/login` | Login (define **access_token em cookie HttpOnly**) | ❌ | 10/min |
 | GET | `/api/auth/status` | Verificar sessão / token válido | ✅ | — |
-| POST | `/api/auth/logout` | Revogar token (adiciona à blacklist) | ✅ | — |
-| POST | `/api/auth/refresh` | Renovar access token via refresh token | ✅ (refresh) | — |
+| POST | `/api/auth/logout` | Revogar token (blacklist) e **limpar cookie** | ✅ | — |
+| POST | `/api/auth/refresh` | Renovar access_token (**atualiza cookie HttpOnly**) | ✅ (refresh) | — |
 
 ### Colaboradores (`/api/colaboradores`)
 
@@ -196,15 +196,17 @@ Acesse: http://localhost:5000
 
 ---
 
-## 🔒 Segurança
+## 🔒 Segurança (v0.4.1)
 
 | Camada | Implementação |
 |---|---|
-| **Autenticação** | JWT stateless (access + refresh tokens) via `flask-jwt-extended` |
-| **Senhas** | Hash PBKDF2 via `werkzeug.security.generate_password_hash` / `check_password_hash` |
+| **Proteção XSS** | Tokens JWT armazenados em **cookies HttpOnly, Secure e SameSite=None** (inacessíveis via JavaScript) |
+| **Autenticação** | JWT stateless via **Cookies HttpOnly** (com fallback para headers durante transição) |
+| **Sessão Contínua** | Refresh Token rotation automática via interceptor no frontend |
+| **Senhas** | Hash PBKDF2 via `werkzeug.security` |
 | **Rate Limiting** | 10 req/min em `/auth/register` e `/auth/login` (Flask-Limiter) |
-| **Token Revocation** | Tabela `token_blacklist` no PostgreSQL (funciona multi-worker) |
-| **CORS** | Restritivo — apenas origens em `CORS_ORIGINS` (CSV via env) |
+| **Token Revocation** | Tabela `token_blacklist` no PostgreSQL + limpeza imediata do cookie no logout |
+| **CORS** | Restritivo — apenas origens em `CORS_ORIGINS` (com `supports_credentials=True`) |
 | **Headers HTTP** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security` (produção) |
 | **Validação de Entrada** | Email, username, datas futuras, enums, integridade referencial (FK) |
 | **Dependências** | CVEs corrigidos: Werkzeug ≥3.1.6, gunicorn ≥23.0, Flask-CORS ≥5.0 |

@@ -34,6 +34,12 @@ class Config:
     JWT_SECRET_KEY: str = _get_required_env('JWT_SECRET_KEY')
     JWT_ACCESS_TOKEN_EXPIRES_HOURS: int = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES_HOURS', '1'))
 
+    # JWT Cookie Configuration
+    JWT_TOKEN_LOCATION: list[str] = ["cookies", "headers"]
+    JWT_ACCESS_COOKIE_NAME: str = "access_token"
+    JWT_COOKIE_CSRF_PROTECT: bool = False
+    JWT_COOKIE_SECURE: bool = True  # True for production; overridden in dev/testing
+
     # Database
     DATABASE_URL: str = _get_required_env('DATABASE_URL')
     DATABASE_SSLMODE: str = os.getenv('DATABASE_SSLMODE', 'require')
@@ -71,6 +77,7 @@ class DevelopmentConfig(Config):
     DEBUG: bool = True
     TESTING: bool = False
     SESSION_COOKIE_SECURE: bool = False  # Allow HTTP in development
+    JWT_COOKIE_SECURE: bool = False  # Allow HTTP cookies in development
 
 
 class ProductionConfig(Config):
@@ -96,6 +103,7 @@ class TestingConfig(Config):
     DEBUG: bool = True
     TESTING: bool = True
     SESSION_COOKIE_SECURE: bool = False
+    JWT_COOKIE_SECURE: bool = False  # Allow HTTP cookies in testing
 
     # Override with test-specific values if needed
     DATABASE_URL: str = os.getenv('TEST_DATABASE_URL', _get_required_env('DATABASE_URL'))

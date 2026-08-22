@@ -86,6 +86,8 @@ class ProductionConfig(Config):
     DEBUG: bool = False
     TESTING: bool = False
     SESSION_COOKIE_SECURE: bool = True
+    
+    JWT_COOKIE_SECURE: bool = True
 
     @classmethod
     def validate(cls) -> None:

@@ -207,7 +207,9 @@ def login():
             httponly=True,
             secure=True,
             samesite='None',
-            max_age=3600
+            partitioned=True,
+            max_age=3600,
+            path='/'
         )
         return response
 
@@ -272,6 +274,7 @@ def logout():
             httponly=True,
             secure=True,
             samesite='None',
+            partitioned=True,
             path='/'
         )
         return response
@@ -313,7 +316,9 @@ def refresh():
             httponly=True,
             secure=True,
             samesite='None',
-            max_age=3600
+            partitioned=True,
+            max_age=3600,
+            path='/'
         )
         return response
 

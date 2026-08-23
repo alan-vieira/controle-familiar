@@ -65,6 +65,7 @@ jobs:
           CORS_ORIGINS: "http://localhost:5173"
           DATABASE_SSLMODE: disable
           RATELIMIT_ENABLED: "false"
+          DATABASE_POOL_MAX: "10"
         run: |
           pytest \
             --cov=app \

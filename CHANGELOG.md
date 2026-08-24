@@ -5,6 +5,26 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.2] - 2026-08-24
+
+### 🐛 Correções (Bug Fixes)
+- **Teclado numérico PWA customizado (estilo app bancário)**: Implementado componente `NumericKeypad` com botões 0-9, vírgula, backspace, limpar e confirmar. Funciona em QUALQUER Android (não depende de teclado nativo bugado).
+- **Bug `openKeypad` com parâmetro incorreto**: Corrigido uso de `name` (undefined) para `fieldName` no `DespesaForm.jsx`, permitindo que o teclado abra com o valor atual do campo.
+- **Closure stale no `handleKeypadBlur`**: Corrigido para ler `keypadValue` (estado local em tempo real) em vez de `formData[keypadField]` (closure stale).
+- **Event bubbling no teclado customizado**: Adicionado `stopPropagation()` no container do `NumericKeypad` para impedir que cliques nos botões fechem o teclado.
+- **Submit do teclado não atualizava formulário**: Corrigido `handleKeypadSubmit` para chamar `onBlur` (formata pt-BR) e fechar o teclado, mantendo o valor no campo.
+
+### 📱 Melhorias Mobile / PWA
+- **Teclado nativo PWA**: Input com `inputMode="decimal"` + `pattern="[0-9]*[,.]?[0-9]*"` + teclado customizado estilo app bancário como fallback.
+- **Formatação inteligente**: Digitação livre (26,50 ou 26.50) → formata no blur para "26,50" (pt-BR) → submit converte para número (26.50).
+- **Safe Area Inset**: Suporte a `env(safe-area-inset-bottom)` para notch/iPhone.
+- **Overlay com click fora**: Fecha teclado ao clicar no fundo escuro, mantendo botões funcionais via `stopPropagation`.
+
+### 🔧 Infraestrutura
+- **Build otimizado**: Bundle 252KB gzipped (79KB gzipped) com Service Worker + Workbox precaching.
+
+---
+
 ## [0.4.1] - 2026-08-22
 
 ### 🔒 Segurança (Resolução da Tarefa P1 do Roadmap)

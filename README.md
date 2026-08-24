@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1%2B-black?logo=flask)](https://flask.palletsprojects.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql)](https://postgresql.org)
-[![Release](https://img.shields.io/badge/Release-v0.4.1-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.4.1)
+[![Release](https://img.shields.io/badge/Release-v0.4.2-orange)](https://github.com/alan-vieira/controle-familiar/releases/tag/v0.4.2)
 
 API RESTful feita em **Python + Flask** para o projeto **Controle Financeiro Familiar**.
 Gerencia colaboradores, rendas, despesas e o cálculo do resumo mensal, com autenticação JWT via **Cookies HttpOnly** e integração ao banco de dados **PostgreSQL** (Supabase/Render).
